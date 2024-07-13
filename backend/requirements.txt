@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-multipart
+google-generativeai
+langchain-google-genai
+langchain-chroma
+chromadb
+google-cloud-texttospeech
+python-dotenv
+
+PyPDF2
+python-docx
+openpyxl
+Pillow
+beautifulsoup4
+requests
+lxml

@@ -1,0 +1,256 @@
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+from backend.core.ai import mimir_ai
+from backend.core.memory import mimir_memory
+from backend.core.voice import mimir_voice
+import uvicorn
+import base64
+from PyPDF2 import PdfReader
+from docx import Document
+from openpyxl import load_workbook
+from PIL import Image
+import io
+import google.generativeai as genai
+import os
+import json
+from dotenv import load_dotenv
+
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=GOOGLE_API_KEY)
+
+app = FastAPI(title="MIMIR API")
+
+# Allow CORS for local frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class ChatRequest(BaseModel):
+    message: str
+    user_id: str = "Matt Burchett" # Default for now
+    personality_intensity: int = 75 # 0-100, default 75%
+
+class ChatResponse(BaseModel):
+    text: str
+    audio_base64: Optional[str] = None
+    tools_used: List[str] = []
+    tool_results: List[Dict[str, Any]] = []
+
+@app.get("/")
+def read_root():
+    return {"status": "MIMIR is awake"}
+
+# User Management
+USERS_FILE = "users.json"
+DEFAULT_USERS = ["Matt Burchett", "Kira McCallister", "Ruth Ann Rawlings", "Hunter Coleman"]
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        save_users(DEFAULT_USERS)
+        return DEFAULT_USERS
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return DEFAULT_USERS
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
+
+@app.get("/users")
+def get_users():
+    return {"users": load_users()}
+
+@app.post("/users")
+def add_user(user: dict):
+    name = user.get("name")
+    if not name:
+        return {"error": "Name is required"}
+    
+    users = load_users()
+    if name in users:
+        return {"error": "User already exists"}
+    
+    users.append(name)
+    save_users(users)
+    return {"users": users}
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: str):
+    users = load_users()
+    if user_id not in users:
+        return {"error": "User not found"}
+    
+    if user_id == "Matt Burchett":
+        return {"error": "Cannot delete default admin user"}
+        
+    users.remove(user_id)
+    save_users(users)
+    
+    # Delete memory
+    mimir_memory.delete_memory(user_id)
+    
+    return {"users": users}
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    from datetime import datetime
+    user_msg = request.message
+    personality = request.personality_intensity
+    user_id = request.user_id
+    
+    # 1. Recall Context for specific user
+    context = mimir_memory.recall(user_msg, user_id=user_id)
+    
+    # 2. Add current date/time to context
+    current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+    time_context = f"Current Date and Time: {current_time}\\nUser: {user_id}"
+    
+    if context:
+        context = f"{time_context}\\n\\n{context}"
+    else:
+        context = time_context
+    
+    # 3. Generate Response (with personality intensity)
+    response_data = mimir_ai.generate_response(user_msg, context, personality_intensity=personality, user_id=user_id)
+    response_text = response_data["text"]
+    tools_used = response_data["tools_used"]
+    tool_results = response_data["tool_results"]
+    
+    # 3. Remember Interaction for specific user
+    mimir_memory.remember(f"User: {user_msg}\\nMIMIR: {response_text}", user_id=user_id)
+    
+    # 4. Generate Voice
+    audio_bytes = mimir_voice.speak(response_text)
+    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else None
+    
+    return ChatResponse(text=response_text, audio_base64=audio_b64, tools_used=tools_used, tool_results=tool_results)
+
+def read_document_content(file_path: str, content: bytes = None) -> str:
+    """Reads content from a file path or bytes"""
+    try:
+        if content is None:
+            with open(file_path, "rb") as f:
+                content = f.read()
+        
+        text = ""
+        filename = os.path.basename(file_path)
+        
+        if filename.endswith('.txt') or filename.endswith('.csv'):
+            text = content.decode('utf-8')
+            
+        elif filename.endswith('.pdf'):
+            pdf_reader = PdfReader(io.BytesIO(content))
+            text = "\\n".join([page.extract_text() for page in pdf_reader.pages])
+            
+        elif filename.endswith(('.doc', '.docx')):
+            doc = Document(io.BytesIO(content))
+            text = "\\n".join([paragraph.text for paragraph in doc.paragraphs])
+            
+        elif filename.endswith(('.xls', '.xlsx')):
+            wb = load_workbook(io.BytesIO(content))
+            text_parts = []
+            for sheet in wb.worksheets:
+                text_parts.append(f"Sheet: {sheet.title}")
+                for row in sheet.iter_rows(values_only=True):
+                    text_parts.append(" | ".join([str(cell) if cell is not None else "" for cell in row]))
+            text = "\\n".join(text_parts)
+            
+        elif filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+            # For direct reading, we might return a description or handle it in AI core
+            # But for memory storage, we use Vision
+            model = genai.GenerativeModel('gemini-2.5-pro')
+            image = Image.open(io.BytesIO(content))
+            response = model.generate_content([
+                "Describe this image in detail, including any text visible in the image:",
+                image
+            ])
+            text = f"Image: {filename}\\n{response.text}"
+            
+        return text
+    except Exception as e:
+        print(f"Error reading document {file_path}: {e}")
+        return ""
+
+@app.post("/upload")
+async def upload_document(file: UploadFile = File(...), user_id: str = Form("Matt Burchett")):
+    """Upload a document to MIMIR's memory"""
+    try:
+        content = await file.read()
+        text = read_document_content(file.filename, content)
+        
+        if not text.strip():
+            return {"status": "error", "message": "No text content could be extracted from the file"}
+        
+        # Store in memory for specific user
+        mimir_memory.remember(text, user_id=user_id, metadata={"source": file.filename, "type": "document"})
+        
+        return {"status": "success", "message": f"Document '{file.filename}' has been added to MIMIR's memory for {user_id}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Error processing file: {str(e)}"}
+
+@app.post("/upload_temp")
+async def upload_temp(file: UploadFile = File(...)):
+    """Upload a file to a temp directory and return the path"""
+    try:
+        temp_dir = os.path.join(os.getcwd(), "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        file_path = os.path.join(temp_dir, file.filename)
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+            
+        return {"path": file_path}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Calendar endpoints
+from backend.core.calendar import CalendarManager
+
+@app.get("/calendar/events")
+async def get_calendar_events(start_date: str = None, end_date: str = None, user_id: str = "Matt Burchett"):
+    """Get all calendar events or filter by date range"""
+    calendar_manager = CalendarManager(user_id=user_id)
+    events = calendar_manager.get_events(start_date, end_date)
+    return {"events": events}
+
+@app.post("/calendar/events")
+async def create_calendar_event(event: dict):
+    """Create a new calendar event"""
+    user_id = event.get('user_id', 'Matt Burchett')
+    calendar_manager = CalendarManager(user_id=user_id)
+    result = calendar_manager.create_event(
+        subject=event['subject'],
+        date=event['date'],
+        start_time=event.get('start_time'),
+        end_time=event.get('end_time'),
+        details=event.get('details')
+    )
+    return result
+
+@app.put("/calendar/events/{event_id}")
+async def update_calendar_event(event_id: str, event: dict):
+    """Update a calendar event"""
+    user_id = event.get('user_id', 'Matt Burchett')
+    calendar_manager = CalendarManager(user_id=user_id)
+    result = calendar_manager.update_event(event_id, **{k: v for k, v in event.items() if k != 'user_id'})
+    return result
+
+@app.delete("/calendar/events/{event_id}")
+async def delete_calendar_event(event_id: str, user_id: str = "Matt Burchett"):
+    """Delete a calendar event"""
+    calendar_manager = CalendarManager(user_id=user_id)
+    success = calendar_manager.delete_event(event_id)
+    return {"success": success}
+
+if __name__ == "__main__":
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
