@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-cinzel);
+  --font-body: var(--font-inter);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-glow: var(--primary-glow);
+  --color-secondary: var(--secondary);
+  --color-secondary-glow: var(--secondary-glow);
+
+  --animate-pulse-slow: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+:root {
+  --background: #020204;
+  /* Deep Void */
+  --foreground: #e2e8f0;
+  /* Ice Mist */
+
+  /* Runic Ice */
+  --primary: #0e7490;
+  /* Cyan 700 */
+  --primary-glow: #a5f3fc;
+  /* Cyan 200 */
+
+  /* Ancient Gold */
+  --secondary: #b45309;
+  /* Amber 700 */
+  --secondary-glow: #fbbf24;
+  /* Amber 400 */
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+/* Custom Utilities */
+.glass-panel {
+  @apply bg-black/40 backdrop-blur-md border border-white/10 shadow-xl;
+}
+
+.text-glow {
+  text-shadow: 0 0 15px var(--primary-glow), 0 0 30px var(--primary);
+}
+
+.runic-border {
+  border: 1px solid var(--secondary);
+  box-shadow: 0 0 8px var(--secondary-glow), inset 0 0 10px rgba(180, 83, 9, 0.2);
+}
+
+/* Scrollbar Hide */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.mask-gradient-b {
+  mask-image: linear-gradient(to bottom, transparent, black 5%, black 95%, transparent);
+}
