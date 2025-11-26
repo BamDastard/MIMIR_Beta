@@ -6,6 +6,8 @@ import { Send, Mic, MicOff, Volume2, VolumeX, Upload, Calendar, ChevronLeft, Che
 import ReactMarkdown from 'react-markdown';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import NewsFeed from '@/components/NewsFeed';
+import JournalView from '@/components/JournalView';
 
 // Utility for tailwind class merging
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -29,6 +31,7 @@ type CalendarEvent = {
   start_time?: string;
   end_time?: string;
   details?: string;
+  attachment?: string;
 };
 
 type Recipe = {
@@ -56,8 +59,12 @@ export default function Home() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  // Journal State
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
 
   // User Management State
   const [users, setUsers] = useState<string[]>([]);
@@ -92,7 +99,6 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const silenceTimer = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef('');
 
@@ -442,6 +448,19 @@ export default function Home() {
     setShowEventModal(true);
   };
 
+  const handleOpenFile = async (path: string) => {
+    const formData = new FormData();
+    formData.append('path', path);
+    try {
+      await fetch(`${API_BASE_URL}/open_file`, {
+        method: 'POST',
+        body: formData
+      });
+    } catch (e) {
+      console.error("Failed to open file:", e);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -636,7 +655,7 @@ export default function Home() {
           video.currentTime = 0.5;
         }}
       >
-        <source src="/MIMIRs_Head.mp4" type="video/mp4" />
+        <source src="/mimir_loop.webm" type="video/webm" />
       </video>
       <div className="fixed inset-0 z-0 bg-black/70 backdrop-blur-[2px]" /> {/* Dark overlay for readability */}
 
@@ -767,7 +786,7 @@ export default function Home() {
 
       {/* Right Sidebar - Minimal Calendar */}
       {!cookingMode && (
-        <aside className="fixed right-4 top-24 z-40 flex flex-col gap-4">
+        <aside className="fixed right-4 top-24 z-40 flex flex-col gap-4 w-64">
           {/* User Dropdown */}
           <div className="relative w-64">
             <button
@@ -888,6 +907,9 @@ export default function Home() {
               })}
             </div>
           </button>
+
+          {/* News Feed */}
+          <NewsFeed currentUser={currentUser} apiBaseUrl={API_BASE_URL} />
         </aside>
       )}
 
@@ -899,120 +921,129 @@ export default function Home() {
 
         {/* Expanded Calendar View - Takes over everything if active */}
         {calendarExpanded ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass-panel p-6 rounded-2xl w-full h-[calc(100vh-8rem)] flex flex-col"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setCalendarExpanded(false)}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-                <h2 className="text-2xl font-cinzel text-primary-glow">
-                  {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                </h2>
-                <div className="flex gap-2">
+          <>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-panel p-6 rounded-2xl w-full h-[calc(100vh-8rem)] flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
                   <button
-                    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
-                    className="p-1 hover:bg-white/5 rounded-full"
+                    onClick={() => setCalendarExpanded(false)}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
                   >
-                    <ChevronLeft className="w-5 h-5" />
+                    <X className="w-5 h-5" />
                   </button>
-                  <button
-                    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
-                    className="p-1 hover:bg-white/5 rounded-full"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                {lastUpdated && (
-                  <span className="text-xs text-foreground/40 font-mono">
-                    Updated: {lastUpdated.toLocaleTimeString()}
-                  </span>
-                )}
-                <button
-                  onClick={fetchEvents}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                  title="Refresh Calendar"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => openCreateModal(new Date())}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-lg transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Event</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="flex-1 grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 overflow-y-auto">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="bg-black/40 p-2 text-center text-sm font-medium text-foreground/60">
-                  {day}
-                </div>
-              ))}
-              {Array.from({ length: 35 }).map((_, i) => {
-                const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-                const startDay = date.getDay();
-                const dayNum = i - startDay + 1;
-                const currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), dayNum);
-                // Adjust for timezone offset
-                const offset = currentDate.getTimezoneOffset();
-                const adjustedDate = new Date(currentDate.getTime() - (offset * 60 * 1000));
-                const dateStr = adjustedDate.toISOString().split('T')[0];
-
-                const isCurrentMonth = currentDate.getMonth() === selectedDate.getMonth();
-                const dayEvents = events.filter(e => e.date === dateStr);
-
-                return (
-                  <div
-                    key={i}
-                    onClick={() => isCurrentMonth && openCreateModal(currentDate)}
-                    className={cn(
-                      "bg-black/20 p-2 min-h-[100px] transition-colors relative group",
-                      isCurrentMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
-                      currentDate.toDateString() === new Date().toDateString() && "bg-red-900/20 border border-red-500/30"
-                    )}
-                  >
-                    {dayNum > 0 && dayNum <= 31 && (
-                      <>
-                        <span className={cn(
-                          "text-sm font-medium",
-                          currentDate.toDateString() === new Date().toDateString() ? "text-red-400" : "text-foreground/60"
-                        )}>
-                          {dayNum}
-                        </span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          {dayEvents.map(event => (
-                            <button
-                              key={event.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(event);
-                              }}
-                              className="text-xs text-left px-2 py-1 rounded bg-primary/20 hover:bg-primary/40 truncate transition-colors"
-                            >
-                              {event.start_time && <span className="opacity-70 mr-1">{event.start_time}</span>}
-                              {event.subject}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                  <h2 className="text-2xl font-cinzel text-primary-glow">
+                    {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+                      className="p-1 hover:bg-white/5 rounded-full"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+                      className="p-1 hover:bg-white/5 rounded-full"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
-          </motion.div>
+                </div>
+                <div className="flex items-center gap-4">
+                  {lastUpdated && (
+                    <span className="text-xs text-foreground/40 font-mono">
+                      Updated: {lastUpdated.toLocaleTimeString()}
+                    </span>
+                  )}
+                  <button
+                    onClick={fetchEvents}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                    title="Refresh Calendar"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => openCreateModal(new Date())}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Event</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="flex-1 grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 overflow-y-auto">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="bg-black/40 p-2 text-center text-sm font-medium text-foreground/60">
+                    {day}
+                  </div>
+                ))}
+                {Array.from({ length: 35 }).map((_, i) => {
+                  const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+                  const startDay = date.getDay();
+                  const dayNum = i - startDay + 1;
+                  const currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), dayNum);
+                  // Adjust for timezone offset
+                  const offset = currentDate.getTimezoneOffset();
+                  const adjustedDate = new Date(currentDate.getTime() - (offset * 60 * 1000));
+                  const dateStr = adjustedDate.toISOString().split('T')[0];
+
+                  const isCurrentMonth = currentDate.getMonth() === selectedDate.getMonth();
+                  const dayEvents = events.filter(e => e.date === dateStr);
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => isCurrentMonth && openCreateModal(currentDate)}
+                      className={cn(
+                        "bg-black/20 p-2 min-h-[100px] transition-colors relative group",
+                        isCurrentMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
+                        currentDate.toDateString() === new Date().toDateString() && "bg-red-900/20 border border-red-500/30"
+                      )}
+                    >
+                      {dayNum > 0 && dayNum <= 31 && (
+                        <>
+                          <span className={cn(
+                            "text-sm font-medium",
+                            currentDate.toDateString() === new Date().toDateString() ? "text-red-400" : "text-foreground/60"
+                          )}>
+                            {dayNum}
+                          </span>
+                          <div className="mt-1 flex flex-col gap-1">
+                            {dayEvents.map(event => (
+                              <button
+                                key={event.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (event.subject === "Daily Journal") {
+                                    setSelectedJournalDate(event.date);
+                                  } else {
+                                    openEditModal(event);
+                                  }
+                                }}
+                                className="text-xs text-left px-2 py-1 rounded bg-primary/20 hover:bg-primary/40 truncate transition-colors"
+                              >
+                                {event.start_time && <span className="opacity-70 mr-1">{event.start_time}</span>}
+                                {event.subject}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )
+                      }
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+
+            {/* News Feed */}
+          </>
         ) : (
           /* Normal View (Chat + Optional Cooking Panel) */
           <>
@@ -1342,6 +1373,19 @@ export default function Home() {
                   />
                 </div>
 
+                {editingEvent?.attachment && (
+                  <div className="flex items-center gap-2 text-sm bg-white/5 p-2 rounded-lg">
+                    <Paperclip size={14} className="text-primary" />
+                    <span className="truncate flex-1 text-white/70">{editingEvent.attachment.split(/[\\/]/).pop()}</span>
+                    <button
+                      onClick={() => handleOpenFile(editingEvent.attachment!)}
+                      className="text-primary-glow hover:underline text-xs"
+                    >
+                      Open
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex gap-3 mt-2">
                   {editingEvent && (
                     <button
@@ -1483,6 +1527,25 @@ export default function Home() {
           </div>
         )}
       </AnimatePresence>
-    </main >
+
+      {/* Journal View Modal */}
+      <AnimatePresence>
+        {selectedJournalDate && (
+          <JournalView
+            date={selectedJournalDate}
+            currentUser={currentUser}
+            apiBaseUrl={API_BASE_URL}
+            onClose={() => setSelectedJournalDate(null)}
+            onOpenCooking={(recipe) => {
+              setRecipe(recipe);
+              setCurrentStep(0);
+              setCookingMode(true);
+              setCalendarExpanded(false); // Ensure we see the cooking panel
+              setSelectedJournalDate(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </main>
   );
 }

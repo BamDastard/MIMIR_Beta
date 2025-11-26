@@ -375,3 +375,113 @@ def cooking_navigation(action: str, step_index: int = None) -> Dict:
         "action": action,
         "step_index": step_index
     }
+
+
+def journal_search(start_date: str = None, end_date: str = None, query: str = None, user_id: str = "Matt Burchett") -> Dict:
+    """
+    Search for journal entries by date range or text query.
+    
+    Args:
+        start_date: YYYY-MM-DD format (optional)
+        end_date: YYYY-MM-DD format (optional)
+        query: Text to search in journal summaries (optional)
+        user_id: User ID to search journals for
+    
+    Returns:
+        {"entries": [...], "count": N}
+    """
+    print(f"[TOOL] Searching journals for {user_id}: start={start_date}, end={end_date}, query={query}")
+    
+    journal_dir = os.path.join(os.getcwd(), "journal_entries")
+    if not os.path.exists(journal_dir):
+        return {"entries": [], "count": 0}
+    
+    # Sanitize user_id for filename matching
+    safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
+    
+    entries = []
+    for filename in os.listdir(journal_dir):
+        if not filename.endswith('.json'):
+            continue
+        
+        # Check if file belongs to this user
+        if not filename.startswith(safe_id + "_"):
+            continue
+        
+        # Extract date from filename: "User Name_YYYY-MM-DD.json"
+        try:
+            date_part = filename.replace(safe_id + "_", "").replace(".json", "")
+            
+            # Filter by date range
+            if start_date and date_part < start_date:
+                continue
+            if end_date and date_part > end_date:
+                continue
+            
+            # Load journal entry
+            filepath = os.path.join(journal_dir, filename)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                journal_data = json.load(f)
+            
+            # Filter by query if provided
+            if query:
+                query_lower = query.lower()
+                summary = journal_data.get('summary', '').lower()
+                if query_lower not in summary:
+                    continue
+            
+            # Add to results (without full summary to keep response size manageable)
+            entries.append({
+                "date": journal_data.get('date'),
+                "user_id": journal_data.get('user_id'),
+                "summary_preview": journal_data.get('summary', '')[:200] + "..." if len(journal_data.get('summary', '')) > 200 else journal_data.get('summary', ''),
+                "has_recipe": journal_data.get('recipe') is not None,
+                "stats": journal_data.get('stats', {})
+            })
+        except Exception as e:
+            print(f"[TOOL] Error processing journal file {filename}: {e}")
+            continue
+    
+    # Sort by date descending
+    entries.sort(key=lambda x: x['date'], reverse=True)
+    
+    return {
+        "entries": entries,
+        "count": len(entries)
+    }
+
+
+def journal_read(date: str, user_id: str = "Matt Burchett") -> Dict:
+    """
+    Read a specific journal entry's full content.
+    
+    Args:
+        date: YYYY-MM-DD format
+        user_id: User ID
+    
+    Returns:
+        Full journal entry data including summary, stats, and recipe
+    """
+    print(f"[TOOL] Reading journal for {user_id} on {date}")
+    
+    journal_dir = os.path.join(os.getcwd(), "journal_entries")
+    safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
+    journal_path = os.path.join(journal_dir, f"{safe_id}_{date}.json")
+    
+    if not os.path.exists(journal_path):
+        return {"error": f"No journal entry found for {date}"}
+    
+    try:
+        with open(journal_path, 'r', encoding='utf-8') as f:
+            journal_data = json.load(f)
+        
+        return {
+            "date": journal_data.get('date'),
+            "user_id": journal_data.get('user_id'),
+            "summary": journal_data.get('summary'),
+            "stats": journal_data.get('stats', {}),
+            "recipe": journal_data.get('recipe')
+        }
+    except Exception as e:
+        print(f"[TOOL] Error reading journal: {e}")
+        return {"error": f"Failed to read journal: {str(e)}"}

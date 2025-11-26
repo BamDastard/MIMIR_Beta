@@ -5,6 +5,8 @@ from typing import Optional, List, Dict, Any
 from backend.core.ai import mimir_ai
 from backend.core.memory import mimir_memory
 from backend.core.voice import mimir_voice
+from backend.core.daily_journal import daily_journal
+from backend.core.news import news_manager
 import uvicorn
 import base64
 from PyPDF2 import PdfReader
@@ -21,6 +23,8 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title="MIMIR API")
 
 # Allow CORS for local frontend
@@ -31,6 +35,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount journal attachments
+os.makedirs("journal_attachments", exist_ok=True)
+app.mount("/journal_attachments", StaticFiles(directory="journal_attachments"), name="journal_attachments")
 
 class ChatRequest(BaseModel):
     message: str
@@ -112,6 +120,7 @@ async def chat(request: ChatRequest):
     
     async def event_generator():
         # 1. Recall Context for specific user
+        daily_journal.log_interaction(user_id, "chat", f"User: {user_msg}")
         context = mimir_memory.recall(user_msg, user_id=user_id)
         
         # 2. Add current date/time to context
@@ -122,6 +131,15 @@ async def chat(request: ChatRequest):
             context = f"{time_context}\\n\\n{context}"
         else:
             context = time_context
+
+        # 2.5 Check for Daily Journal Triggers
+        # Check if we need to generate yesterday's journal
+        await daily_journal.check_end_of_day(user_id)
+        
+        # Check if we should prompt the user
+        if daily_journal.check_prompt_needed(user_id):
+            daily_journal.mark_prompted(user_id)
+            context += "\\n\\n[SYSTEM NOTE: It is after 7:00 PM and the user has not recorded much today. Gently ask them how their day went and if they have anything to add to their daily log.]"
         
         # 3. Generate Response Stream
         async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
@@ -132,6 +150,9 @@ async def chat(request: ChatRequest):
                 
                 # 3. Remember Interaction for specific user
                 mimir_memory.remember(f"User: {user_msg}\\nMIMIR: {response_text}", user_id=user_id)
+                daily_journal.log_interaction(user_id, "chat", f"MIMIR: {response_text}")
+                if tools_used:
+                    daily_journal.log_interaction(user_id, "tool_use", {"tools": tools_used, "results": tool_results})
                 
                 # 4. Generate Voice
                 audio_bytes = mimir_voice.speak(response_text)
@@ -267,6 +288,53 @@ async def delete_calendar_event(event_id: str, user_id: str = "Matt Burchett"):
     calendar_manager = CalendarManager(user_id=user_id)
     success = calendar_manager.delete_event(event_id)
     return {"success": success}
+
+@app.get("/news/top")
+async def get_top_news(refresh: bool = False):
+    """Get top 10 news headlines."""
+    return {"news": news_manager.get_top_news(force_refresh=refresh)}
+
+@app.post("/news/log")
+async def log_news_access(user_id: str = Form(...), title: str = Form(...), url: str = Form(...)):
+    """Log that a user accessed a news item."""
+    daily_journal.log_interaction(user_id, "action", f"Read news: {title} ({url})")
+    return {"status": "logged"}
+
+@app.post("/open_file")
+async def open_file(path: str = Form(...)):
+    """Opens a file on the host system."""
+    import subprocess
+    import platform
+    
+    if not os.path.exists(path):
+        return {"error": "File not found"}
+        
+    try:
+        if platform.system() == 'Windows':
+            os.startfile(path)
+        elif platform.system() == 'Darwin':
+            subprocess.call(('open', path))
+        else:
+            subprocess.call(('xdg-open', path))
+        return {"status": "success"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/journal/{date_str}")
+async def get_journal_entry(date_str: str, user_id: str = "Matt Burchett"):
+    """Get the journal entry for a specific date."""
+    safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
+    journal_dir = os.path.join(os.getcwd(), "journal_entries")
+    journal_path = os.path.join(journal_dir, f"{safe_id}_{date_str}.json")
+    
+    if not os.path.exists(journal_path):
+        return {"error": "Journal entry not found"}
+        
+    try:
+        with open(journal_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": f"Failed to load journal: {str(e)}"}
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

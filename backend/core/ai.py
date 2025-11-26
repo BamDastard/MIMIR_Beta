@@ -88,7 +88,7 @@ class MimirAI:
         
     def execute_tool(self, tool_call: dict, user_id: str = "Matt Burchett") -> dict:
         """Execute a tool and return results"""
-        from backend.core.tools import web_search, get_weather, get_location, start_cooking, cooking_navigation
+        from backend.core.tools import web_search, get_weather, get_location, start_cooking, cooking_navigation, journal_search, journal_read
         from backend.core.calendar import calendar_search, calendar_create, calendar_update, calendar_delete
         
         tool_name = tool_call["tool"]
@@ -162,6 +162,16 @@ class MimirAI:
                 if step_index:
                     step_index = int(step_index)
                 return cooking_navigation(action, step_index)
+            
+            elif tool_name == "journal_search":
+                start_date = params.get("start_date")
+                end_date = params.get("end_date")
+                query = params.get("query")
+                return journal_search(start_date, end_date, query, user_id=user_id)
+            
+            elif tool_name == "journal_read":
+                date = params.get("date")
+                return journal_read(date, user_id=user_id)
             
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
@@ -266,7 +276,9 @@ class MimirAI:
             "calendar_update": "Altering the timeline...",
             "calendar_delete": "Severing a thread of time...",
             "start_cooking": "Preparing the cauldron...",
-            "cooking_navigation": "Guiding the culinary ritual..."
+            "cooking_navigation": "Guiding the culinary ritual...",
+            "journal_search": "Searching the annals...",
+            "journal_read": "Reading from the chronicles..."
         }
 
         try:
