@@ -24,6 +24,7 @@ from google.auth.transport import requests as google_requests
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") # Add this to env
+print(f"Backend initialized with GOOGLE_CLIENT_ID: {GOOGLE_CLIENT_ID[:5]}..." if GOOGLE_CLIENT_ID else "WARNING: GOOGLE_CLIENT_ID is missing")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 from fastapi.staticfiles import StaticFiles
@@ -51,7 +52,8 @@ async def verify_google_token(token: str):
         # Specify the CLIENT_ID of the app that accesses the backend:
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
         return id_info
-    except ValueError:
+    except ValueError as e:
+        print(f"Token verification error: {e}")
         return None
 
 @app.middleware("http")
