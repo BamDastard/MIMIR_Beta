@@ -34,7 +34,8 @@ app = FastAPI(title="MIMIR API")
 # In production, replace "*" with specific Cloud Run URL
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://*.run.app"], 
+    allow_origins=["*"], # Allow all for now to ensure connectivity
+    allow_origin_regex="https://.*\.run\.app", # Explicitly allow Cloud Run subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

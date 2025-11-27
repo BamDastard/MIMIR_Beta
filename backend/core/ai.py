@@ -20,18 +20,28 @@ def load_persona():
     """Loads the MIMIR persona from personas.ini"""
     try:
         config = configparser.ConfigParser()
-        # Assuming personas.ini is in the project root, two levels up from this file
-        # backend/core/ai.py -> backend/core -> backend -> root
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        config_path = os.path.join(base_dir, "personas.ini")
+        # Try multiple locations for personas.ini
+        # 1. Project Root (Local & Docker) - 3 levels up from backend/core/ai.py
+        path_variants = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "personas.ini"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas.ini"),
+            os.path.join(os.getcwd(), "personas.ini"),
+            "personas.ini"
+        ]
         
-        if os.path.exists(config_path):
+        config_path = None
+        for p in path_variants:
+            if os.path.exists(p):
+                config_path = p
+                break
+        
+        if config_path:
             config.read(config_path)
             if "OPERATING_MODE" in config and "MIMIR" in config["OPERATING_MODE"]:
                 print(f"[MIMIR] Loaded persona from {config_path}")
                 return config["OPERATING_MODE"]["MIMIR"]
             
-        print(f"[WARN] personas.ini not found or invalid at {config_path}. Using default.")
+        print(f"[WARN] personas.ini not found in checked paths: {path_variants}. Using default.")
     except Exception as e:
         print(f"[ERROR] Failed to load personas.ini: {e}")
     
