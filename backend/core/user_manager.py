@@ -58,4 +58,5 @@ class UserManager:
         return None
 
 # Global instance
-user_manager = UserManager()
+MIMIR_DATA_DIR = os.getenv("MIMIR_DATA_DIR", ".")
+user_manager = UserManager(storage_file=os.path.join(MIMIR_DATA_DIR, "user_profiles.json"))
