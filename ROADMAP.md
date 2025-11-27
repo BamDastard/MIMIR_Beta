@@ -35,7 +35,7 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
   - [ ] Rate limiting per user/device
 - [x] User profile system
   - [x] Link users to ChromaDB memory spaces
-  - [ ] Per-user settings (personality intensity, voice preferences)
+  - [/] Per-user settings (personality intensity, voice preferences, timezone)
   - [x] User-specific calendar storage
 
 ### Infrastructure & Deployment
@@ -50,8 +50,8 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 - [x] CI/CD Pipeline
   - [x] GitHub Actions to build and push to Artifact Registry
   - [x] Auto-deploy to Cloud Run on push to main
-- [ ] Database Setup
-  - [ ] Configure persistent storage for ChromaDB (GCS backend or persistent volume)
+- [x] Database Setup
+  - [x] Configure persistent storage for ChromaDB (GCS FUSE)
   - [ ] Set up Firestore for user data (optional but recommended)
 
 ### Frontend Integration
