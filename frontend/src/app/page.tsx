@@ -16,7 +16,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 type Message = {
   role: 'user' | 'assistant';
