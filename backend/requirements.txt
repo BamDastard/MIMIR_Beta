@@ -18,3 +18,4 @@ Pillow
 beautifulsoup4
 requests
 lxml
+tzdata
