@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
