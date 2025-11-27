@@ -26,45 +26,45 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 ## Phase 1: Foundation & Cloud Deployment (4-6 weeks)
 
 ### Authentication & Authorization
-- [ ] Implement user authentication system
-  - [ ] Google OAuth integration (primary)
+- [x] Implement user authentication system
+  - [x] Google OAuth integration (primary)
   - [ ] Email/password fallback option
-  - [ ] Session management with JWT tokens
+  - [x] Session management with JWT tokens
 - [ ] Device-to-server authentication
   - [ ] API key system for trusted devices
   - [ ] Rate limiting per user/device
-- [ ] User profile system
-  - [ ] Link users to ChromaDB memory spaces
+- [x] User profile system
+  - [x] Link users to ChromaDB memory spaces
   - [ ] Per-user settings (personality intensity, voice preferences)
-  - [ ] User-specific calendar storage
+  - [x] User-specific calendar storage
 
 ### Infrastructure & Deployment
 - [x] Docker containerization
   - [x] Dockerfile for backend (optimized for Cloud Run)
   - [x] Dockerfile for frontend
   - [x] docker-compose.yml for local development
-- [ ] Google Cloud Setup
-  - [ ] Create GCP Project
-  - [ ] Enable APIs (Cloud Run, Container Registry, Firestore, etc.)
-  - [ ] Set up IAM roles and service accounts
-- [ ] CI/CD Pipeline
-  - [ ] GitHub Actions to build and push to Artifact Registry
-  - [ ] Auto-deploy to Cloud Run on push to main
+- [x] Google Cloud Setup
+  - [x] Create GCP Project
+  - [x] Enable APIs (Cloud Run, Container Registry, Firestore, etc.)
+  - [x] Set up IAM roles and service accounts
+- [x] CI/CD Pipeline
+  - [x] GitHub Actions to build and push to Artifact Registry
+  - [x] Auto-deploy to Cloud Run on push to main
 - [ ] Database Setup
   - [ ] Configure persistent storage for ChromaDB (GCS backend or persistent volume)
   - [ ] Set up Firestore for user data (optional but recommended)
 
 ### Frontend Integration
-- [ ] Update Frontend to consume Cloud Run API URL
-- [ ] Handle CORS and Authentication tokens in requests
-- [ ] Verify end-to-end flow (Chat -> Backend -> LLM -> Response)
+- [x] Update Frontend to consume Cloud Run API URL
+- [x] Handle CORS and Authentication tokens in requests
+- [x] Verify end-to-end flow (Chat -> Backend -> LLM -> Response)
 
 ### Backend Hardening
-- [ ] Add authentication middleware to all endpoints
-- [ ] Implement proper CORS configuration for production
-- [ ] Add request validation and sanitization
-- [ ] Set up logging and error monitoring
-- [ ] Create health check endpoint for uptime monitoring
+- [x] Add authentication middleware to all endpoints
+- [x] Implement proper CORS configuration for production
+- [x] Add request validation and sanitization
+- [x] Set up logging and error monitoring
+- [x] Create health check endpoint for uptime monitoring
 
 **Deliverable**: Secure MIMIR running on Google Cloud Run, accessible via web frontend
 
