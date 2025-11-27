@@ -93,5 +93,5 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
-            NEXTAUTH_URL=https://mimir-frontend-dot-${{ env.PROJECT_ID }}.uc.r.appspot.com # Placeholder, will need update after first deploy or use custom domain
+            NEXTAUTH_URL=https://mimir-frontend-711207955787.us-central1.run.app
           flags: '--allow-unauthenticated'
