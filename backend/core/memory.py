@@ -16,6 +16,11 @@ class MimirMemory:
         project_root = os.path.dirname(os.path.dirname(current_dir))
         self.base_directory = os.path.join(project_root, "mimir_memory_db")
         
+        # Ensure directory exists for Cloud Run (ephemeral)
+        if not os.path.exists(self.base_directory):
+            os.makedirs(self.base_directory, exist_ok=True)
+            print(f"[MIMIR] Created new memory directory at {self.base_directory}")
+        
         print(f"[MIMIR] Memory Base Directory: {self.base_directory}")
         
         self.embedding_function = GoogleGenerativeAIEmbeddings(
