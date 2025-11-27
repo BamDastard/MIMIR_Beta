@@ -46,6 +46,10 @@ jobs:
           docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-backend:${{ github.sha }} ./backend
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-backend:${{ github.sha }}
 
+      - name: Create GCS Bucket for Persistence
+        run: |
+          gcloud storage buckets create gs://${{ env.PROJECT_ID }}-mimir-data --location=${{ env.REGION }} || true
+
       - name: Deploy Backend
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -56,7 +60,8 @@ jobs:
           env_vars: |
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
-          flags: '--allow-unauthenticated' # Temporarily allow until frontend auth is solid
+            MIMIR_DATA_DIR=/mnt/gcs
+          flags: '--allow-unauthenticated --add-volume=name=mimir-data,type=cloud-storage,bucket=${{ env.PROJECT_ID }}-mimir-data --add-volume-mount=volume=mimir-data,mount-path=/mnt/gcs'
 
   deploy-frontend:
     needs: deploy-backend

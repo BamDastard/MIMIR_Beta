@@ -6,8 +6,13 @@ from backend.core.ai import mimir_ai
 from backend.core.calendar import CalendarManager
 from backend.core.memory import mimir_memory
 
-DAILY_LOGS_DIR = "./daily_logs"
-JOURNAL_ATTACHMENTS_DIR = "./journal_attachments"
+MIMIR_DATA_DIR = os.getenv("MIMIR_DATA_DIR")
+if MIMIR_DATA_DIR:
+    DAILY_LOGS_DIR = os.path.join(MIMIR_DATA_DIR, "daily_logs")
+    JOURNAL_ATTACHMENTS_DIR = os.path.join(MIMIR_DATA_DIR, "journal_attachments")
+else:
+    DAILY_LOGS_DIR = "./daily_logs"
+    JOURNAL_ATTACHMENTS_DIR = "./journal_attachments"
 
 class DailyJournalManager:
     def __init__(self):

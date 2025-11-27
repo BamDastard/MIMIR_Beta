@@ -10,11 +10,14 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 class MimirMemory:
     def __init__(self):
-        # Resolve absolute path to project root/mimir_memory_db
-        # backend/core/memory.py -> backend/core -> backend -> root
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(current_dir))
-        self.base_directory = os.path.join(project_root, "mimir_memory_db")
+        # Resolve base directory (support for Cloud Run GCS mount)
+        data_dir = os.getenv("MIMIR_DATA_DIR")
+        if data_dir:
+            self.base_directory = os.path.join(data_dir, "mimir_memory_db")
+        else:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(current_dir))
+            self.base_directory = os.path.join(project_root, "mimir_memory_db")
         
         # Ensure directory exists for Cloud Run (ephemeral)
         if not os.path.exists(self.base_directory):
