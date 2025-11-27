@@ -18,23 +18,68 @@ import google.generativeai as genai
 import os
 import json
 from dotenv import load_dotenv
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") # Add this to env
 genai.configure(api_key=GOOGLE_API_KEY)
 
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="MIMIR API")
 
-# Allow CORS for local frontend
+# Allow CORS for local frontend and Cloud Run
+# In production, replace "*" with specific Cloud Run URL
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://*.run.app"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Authentication Middleware
+from fastapi import Request, HTTPException, status
+
+async def verify_google_token(token: str):
+    try:
+        # Specify the CLIENT_ID of the app that accesses the backend:
+        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        return id_info
+    except ValueError:
+        return None
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+        
+    # Skip auth for health check and docs (if needed)
+    if request.url.path == "/" or request.url.path == "/docs" or request.url.path == "/openapi.json":
+        return await call_next(request)
+
+    # For now, we are permissive in dev mode if no client ID is set
+    if not GOOGLE_CLIENT_ID:
+        # print("Warning: GOOGLE_CLIENT_ID not set, skipping auth verification")
+        return await call_next(request)
+
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        # Allow unauthenticated for now until frontend is ready
+        # return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+        pass 
+
+    # In a real scenario, we would enforce it:
+    # token = auth_header.split(' ')[1]
+    # user_info = await verify_google_token(token)
+    # if not user_info:
+    #     return JSONResponse(status_code=401, content={"error": "Invalid token"})
+    # request.state.user = user_info
+
+    response = await call_next(request)
+    return response
 
 # Mount journal attachments
 os.makedirs("journal_attachments", exist_ok=True)
@@ -310,6 +355,10 @@ async def open_file(path: str = Form(...)):
         return {"error": "File not found"}
         
     try:
+        # Disable in Cloud Run (check for K_SERVICE env var)
+        if os.getenv("K_SERVICE"):
+             return {"error": "This feature is disabled in the cloud environment."}
+
         if platform.system() == 'Windows':
             os.startfile(path)
         elif platform.system() == 'Darwin':

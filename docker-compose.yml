@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8080"
+    environment:
+      - PORT=8080
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      # Mount local data directories to mimic persistence
+      # Note: In Cloud Run, we will use GCS FUSE, but for local docker, we use bind mounts
+      - ./mimir_memory_db:/app/mimir_memory_db
+      - ./users.json:/app/users.json
+      - ./journal_entries:/app/journal_entries
+      - ./personas.ini:/app/personas.ini
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
