@@ -22,11 +22,12 @@ class DailyJournalManager:
         os.makedirs(JOURNAL_ATTACHMENTS_DIR, exist_ok=True)
         self.prompted_users = set() # Track who has been prompted today
 
-    def _get_user_time(self, user_id: str) -> datetime.datetime:
+    def get_user_time(self, user_id: str) -> datetime.datetime:
         default_tz = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
         try:
             profile = user_manager.get_profile(user_id)
-            tz_name = profile.timezone if profile and hasattr(profile, 'timezone') else default_tz
+            # Use profile timezone if set, otherwise fallback to default
+            tz_name = profile.timezone if profile and getattr(profile, 'timezone', None) else default_tz
             return datetime.datetime.now(ZoneInfo(tz_name))
         except Exception as e:
             print(f"Error getting user time: {e}")
@@ -35,7 +36,7 @@ class DailyJournalManager:
     def _get_log_file(self, user_id: str, date_str: str = None) -> str:
         if not date_str:
             # Use user's local date for log file naming
-            date_str = self._get_user_time(user_id).strftime("%Y-%m-%d")
+            date_str = self.get_user_time(user_id).strftime("%Y-%m-%d")
         safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
         return os.path.join(DAILY_LOGS_DIR, f"{safe_id}_{date_str}.json")
 
@@ -72,7 +73,7 @@ class DailyJournalManager:
         - We haven't prompted yet today
         - The log is 'sparse' (e.g., < 5 interactions or mostly short)
         """
-        now = self._get_user_time(user_id)
+        now = self.get_user_time(user_id)
         
         # Reset prompted_users if it's a new day (basic check, could be improved)
         # For now, we'll rely on the caller to handle day rollovers or restart
@@ -106,7 +107,7 @@ class DailyJournalManager:
         """
         Checks if it's time to generate the daily journal (11:59 PM or later).
         """
-        now = self._get_user_time(user_id)
+        now = self.get_user_time(user_id)
         date_str = now.strftime("%Y-%m-%d")
         
         # Check if it's 11:59 PM
