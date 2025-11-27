@@ -35,6 +35,7 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
   - [ ] Rate limiting per user/device
 - [x] User profile system
   - [x] Link users to ChromaDB memory spaces
+  - [x] Implement document chunking for large file support
   - [/] Per-user settings (personality intensity, voice preferences, timezone)
   - [x] User-specific calendar storage
 
