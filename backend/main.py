@@ -90,6 +90,7 @@ async def auth_middleware(request: Request, call_next):
     # Inject User Info into Request State
     request.state.user_auth_id = user_info['sub']
     request.state.user_email = user_info.get('email', '')
+    request.state.user_name = user_info.get('name', 'User')
     
     # Note: We do NOT check for profile existence here. 
     # That is handled by the endpoints. /user/onboard needs to work even if no profile exists.
@@ -121,7 +122,10 @@ def get_current_user(request: Request):
     auth_id = request.state.user_auth_id
     profile = user_manager.get_profile(auth_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Auto-onboard if profile missing (ephemeral storage fix)
+        email = request.state.user_email
+        name = request.state.user_name
+        profile = user_manager.create_profile(auth_id, email, name)
     return profile
 
 class OnboardRequest(BaseModel):
