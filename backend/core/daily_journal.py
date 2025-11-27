@@ -2,9 +2,11 @@ import os
 import json
 import datetime
 from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
 from backend.core.ai import mimir_ai
 from backend.core.calendar import CalendarManager
 from backend.core.memory import mimir_memory
+from backend.core.user_manager import user_manager
 
 MIMIR_DATA_DIR = os.getenv("MIMIR_DATA_DIR")
 if MIMIR_DATA_DIR:
@@ -20,9 +22,20 @@ class DailyJournalManager:
         os.makedirs(JOURNAL_ATTACHMENTS_DIR, exist_ok=True)
         self.prompted_users = set() # Track who has been prompted today
 
+    def _get_user_time(self, user_id: str) -> datetime.datetime:
+        default_tz = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
+        try:
+            profile = user_manager.get_profile(user_id)
+            tz_name = profile.timezone if profile and hasattr(profile, 'timezone') else default_tz
+            return datetime.datetime.now(ZoneInfo(tz_name))
+        except Exception as e:
+            print(f"Error getting user time: {e}")
+            return datetime.datetime.now(ZoneInfo("UTC"))
+
     def _get_log_file(self, user_id: str, date_str: str = None) -> str:
         if not date_str:
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            # Use user's local date for log file naming
+            date_str = self._get_user_time(user_id).strftime("%Y-%m-%d")
         safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
         return os.path.join(DAILY_LOGS_DIR, f"{safe_id}_{date_str}.json")
 
@@ -33,7 +46,7 @@ class DailyJournalManager:
         """
         log_file = self._get_log_file(user_id)
         entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now().isoformat(), # Timestamp can remain UTC/ISO
             "type": type,
             "content": content
         }
@@ -55,11 +68,11 @@ class DailyJournalManager:
         """
         Check if we should prompt the user for more info.
         Returns True if:
-        - It's after 7 PM
+        - It's after 7 PM (User Local Time)
         - We haven't prompted yet today
         - The log is 'sparse' (e.g., < 5 interactions or mostly short)
         """
-        now = datetime.datetime.now()
+        now = self._get_user_time(user_id)
         
         # Reset prompted_users if it's a new day (basic check, could be improved)
         # For now, we'll rely on the caller to handle day rollovers or restart
@@ -73,7 +86,7 @@ class DailyJournalManager:
         if prompt_key in self.prompted_users:
             return False
             
-        log_file = self._get_log_file(user_id)
+        log_file = self._get_log_file(user_id, date_str)
         if not os.path.exists(log_file):
             self.prompted_users.add(prompt_key)
             return True # No logs at all, definitely prompt
@@ -93,7 +106,7 @@ class DailyJournalManager:
         """
         Checks if it's time to generate the daily journal (11:59 PM or later).
         """
-        now = datetime.datetime.now()
+        now = self._get_user_time(user_id)
         date_str = now.strftime("%Y-%m-%d")
         
         # Check if it's 11:59 PM

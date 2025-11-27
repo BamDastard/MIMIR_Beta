@@ -61,6 +61,7 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
             MIMIR_DATA_DIR=/mnt/gcs
+            DEFAULT_TIMEZONE=America/New_York
           flags: '--allow-unauthenticated --add-volume=name=mimir-data,type=cloud-storage,bucket=${{ env.PROJECT_ID }}-mimir-data --add-volume-mount=volume=mimir-data,mount-path=/mnt/gcs'
 
   deploy-frontend:

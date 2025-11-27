@@ -8,6 +8,7 @@ class UserProfile(BaseModel):
     auth_id: str
     email: str
     display_name: str
+    timezone: str = "UTC"
     created_at: str
 
 class UserManager:
