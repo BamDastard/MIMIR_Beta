@@ -18,4 +18,6 @@ Pillow
 beautifulsoup4
 requests
 lxml
+lxml
 tzdata
+langchain-text-splitters

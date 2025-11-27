@@ -2,6 +2,7 @@ import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -56,6 +57,7 @@ class MimirMemory:
     def remember(self, text: str, user_id: str = "Matt Burchett", metadata: dict = None):
         """
         Stores a piece of information in the user's vector database.
+        Splits large text into chunks for better retrieval.
         """
         if metadata is None:
             metadata = {}
@@ -63,10 +65,20 @@ class MimirMemory:
         # Ensure user_id is in metadata
         metadata["user_id"] = user_id
         
-        doc = Document(page_content=text, metadata=metadata)
+        # Split text into chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=100,
+            length_function=len,
+            is_separator_regex=False,
+        )
+        texts = text_splitter.split_text(text)
+        
+        docs = [Document(page_content=t, metadata=metadata) for t in texts]
+        
         store = self.get_vector_store(user_id)
-        store.add_documents([doc])
-        print(f"MIMIR remembered for {user_id}: {text[:50]}...")
+        store.add_documents(docs)
+        print(f"MIMIR remembered for {user_id}: {len(docs)} chunks.")
 
     def recall(self, query: str, user_id: str = "Matt Burchett", k: int = 3, max_chars: int = 1500000) -> str:
         """
