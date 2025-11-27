@@ -10,11 +10,11 @@ type NewsItem = {
 };
 
 type NewsFeedProps = {
-    currentUser: string;
     apiBaseUrl: string;
+    fetcher: (url: string, options?: any) => Promise<Response>;
 };
 
-export default function NewsFeed({ currentUser, apiBaseUrl }: NewsFeedProps) {
+export default function NewsFeed({ apiBaseUrl, fetcher }: NewsFeedProps) {
     const [news, setNews] = useState<NewsItem[]>([]);
     const [startIndex, setStartIndex] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -22,7 +22,7 @@ export default function NewsFeed({ currentUser, apiBaseUrl }: NewsFeedProps) {
     const fetchNews = async (refresh = false) => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiBaseUrl}/news/top${refresh ? '?refresh=true' : ''}`);
+            const res = await fetcher(`${apiBaseUrl}/news/top${refresh ? '?refresh=true' : ''}`);
             const data = await res.json();
             if (data.news) {
                 setNews(data.news);
@@ -55,12 +55,11 @@ export default function NewsFeed({ currentUser, apiBaseUrl }: NewsFeedProps) {
 
         // Log access
         const formData = new FormData();
-        formData.append('user_id', currentUser);
         formData.append('title', item.title);
         formData.append('url', item.link);
 
         try {
-            await fetch(`${apiBaseUrl}/news/log`, {
+            await fetcher(`${apiBaseUrl}/news/log`, {
                 method: 'POST',
                 body: formData
             });

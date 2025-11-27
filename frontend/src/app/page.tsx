@@ -2,12 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Volume2, VolumeX, Upload, Calendar, ChevronLeft, ChevronRight, X, Plus, RefreshCw, ChefHat, ArrowLeft, ArrowRight, Paperclip, Camera, User, Trash2, ChevronDown } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, Upload, Calendar, ChevronLeft, ChevronRight, X, Plus, RefreshCw, ChefHat, ArrowLeft, ArrowRight, Paperclip, Camera, User, Trash2, ChevronDown, LogOut, LogIn } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import NewsFeed from '@/components/NewsFeed';
 import JournalView from '@/components/JournalView';
+import { useSession, signIn, signOut } from "next-auth/react";
+import OnboardingModal from '@/components/OnboardingModal';
 
 // Utility for tailwind class merging
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -41,6 +43,7 @@ type Recipe = {
 };
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -66,13 +69,9 @@ export default function Home() {
   // Journal State
   const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
 
-  // User Management State
-  const [users, setUsers] = useState<string[]>([]);
-  const [currentUser, setCurrentUser] = useState<string>('Matt Burchett');
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [newUserName, setNewUserName] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  // User Management State (New)
+  const [currentUser, setCurrentUser] = useState<string | null>(null); // Display Name
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Conversation Mode State
   const [conversationMode, setConversationMode] = useState(false);
@@ -229,13 +228,13 @@ export default function Home() {
     setThinkingStatus("Thinking...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: content,
           personality_intensity: personalityIntensity,
-          user_id: currentUser
+          // user_id removed, handled by auth token
         }),
       });
 
@@ -341,7 +340,7 @@ export default function Home() {
   // Calendar Functions
   const fetchEvents = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/calendar/events?user_id=${encodeURIComponent(currentUser)}&t=${Date.now()}`, { cache: 'no-store' });
+      const response = await authenticatedFetch(`${API_BASE_URL}/calendar/events?t=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
       console.log('Fetched events:', data.events);
       setEvents(data.events);
@@ -360,7 +359,7 @@ export default function Home() {
 
     try {
       const dateStr = selectedDate.toISOString().split('T')[0];
-      const response = await fetch(`${API_BASE_URL}/calendar/events`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/calendar/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -369,7 +368,6 @@ export default function Home() {
           start_time: newEventTime || undefined,
           end_time: newEventEndTime || undefined,
           details: newEventDetails,
-          user_id: currentUser
         }),
       });
 
@@ -389,7 +387,7 @@ export default function Home() {
 
   const handleDeleteEvent = async (eventId: string) => {
     try {
-      await fetch(`${API_BASE_URL}/calendar/events/${eventId}?user_id=${encodeURIComponent(currentUser)}`, {
+      await authenticatedFetch(`${API_BASE_URL}/calendar/events/${eventId}`, {
         method: 'DELETE',
       });
       await wait(100);
@@ -404,7 +402,7 @@ export default function Home() {
     if (!editingEvent) return;
 
     try {
-      await fetch(`${API_BASE_URL}/calendar/events/${editingEvent.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/calendar/events/${editingEvent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -412,7 +410,6 @@ export default function Home() {
           details: newEventDetails,
           start_time: newEventTime || undefined,
           end_time: newEventEndTime || undefined,
-          user_id: currentUser
         }),
       });
 
@@ -452,7 +449,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append('path', path);
     try {
-      await fetch(`${API_BASE_URL}/open_file`, {
+      await authenticatedFetch(`${API_BASE_URL}/open_file`, {
         method: 'POST',
         body: formData
       });
@@ -468,10 +465,9 @@ export default function Home() {
     setUploadStatus('Uploading...');
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('user_id', currentUser);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/upload`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -503,7 +499,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/upload_temp`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/upload_temp`, {
         method: 'POST',
         body: formData,
       });
@@ -520,62 +516,43 @@ export default function Home() {
     }
   };
 
-  // Fetch Users
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/users`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.users && data.users.length > 0) {
-          setUsers(data.users);
-          // Ensure current user is in list, else default to first
-          if (!data.users.includes(currentUser)) {
-            setCurrentUser(data.users[0]);
-          }
-        }
-      })
-      .catch(err => console.error("Failed to fetch users:", err));
-  }, []);
+  // Authenticated Fetch Helper
+  const authenticatedFetch = async (url: string, options: any = {}) => {
+    // If no session (e.g. dev mode without auth), we might still want to try if backend is permissive
+    // But for now, let's assume we need token if session exists
+    const headers = {
+      ...options.headers,
+    };
 
-  // User Management Functions
-  const handleAddUser = async () => {
-    if (!newUserName.trim()) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newUserName })
-      });
-      const data = await res.json();
-      if (data.users) {
-        setUsers(data.users);
-        setCurrentUser(newUserName);
-        setShowAddUserModal(false);
-        setNewUserName('');
-      }
-    } catch (err) {
-      console.error("Failed to add user:", err);
+    if (session && (session as any).idToken) {
+      headers['Authorization'] = `Bearer ${(session as any).idToken}`;
     }
+
+    return fetch(url, { ...options, headers });
   };
 
-  const handleDeleteUser = async (userToDelete: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(userToDelete)}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (data.users) {
-        setUsers(data.users);
-        if (currentUser === userToDelete) {
-          setCurrentUser(data.users[0] || 'Default User');
-        }
-        setShowDeleteConfirm(null);
-      } else if (data.error) {
-        alert(data.error);
-        setShowDeleteConfirm(null);
-      }
-    } catch (err) {
-      console.error("Failed to delete user:", err);
+  // Check Onboarding Status
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      authenticatedFetch(`${API_BASE_URL}/user/me`)
+        .then(async (res) => {
+          if (res.status === 404 || res.status === 403) {
+            setShowOnboarding(true);
+          } else if (res.ok) {
+            const profile = await res.json();
+            setCurrentUser(profile.display_name);
+            setShowOnboarding(false);
+          }
+        })
+        .catch(err => console.error("Failed to check user status:", err));
+    } else if (status === 'unauthenticated') {
+      setCurrentUser(null);
     }
+  }, [status, session]);
+
+  const handleOnboardingComplete = (displayName: string) => {
+    setCurrentUser(displayName);
+    setShowOnboarding(false);
   };
 
   // Camera Handling
@@ -613,7 +590,7 @@ export default function Home() {
             formData.append('file', file);
 
             try {
-              const response = await fetch(`${API_BASE_URL}/upload_temp`, {
+              const response = await authenticatedFetch(`${API_BASE_URL}/upload_temp`, {
                 method: 'POST',
                 body: formData,
               });
@@ -787,73 +764,36 @@ export default function Home() {
       {/* Right Sidebar - Minimal Calendar */}
       {!cookingMode && (
         <aside className="fixed right-4 top-24 z-40 flex flex-col gap-4 w-64">
-          {/* User Dropdown */}
+          {/* Auth Status */}
           <div className="relative w-64">
-            <button
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="w-full glass-panel p-3 rounded-lg flex items-center justify-between hover:border-primary/50 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-1.5 rounded-full bg-primary/10 text-primary-glow group-hover:bg-primary/20 transition-colors">
-                  <User size={16} />
-                </div>
-                <span className="text-sm font-medium text-white/90">{currentUser}</span>
-              </div>
-              <ChevronDown size={14} className="text-white/50 group-hover:text-white/80 transition-colors" />
-            </button>
-
-            <AnimatePresence>
-              {showUserDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute right-0 top-full mt-2 w-full bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
-                >
-                  <div className="p-2 flex flex-col gap-1">
-                    {users.map(user => (
-                      <div key={user} className="flex items-center justify-between group p-2 hover:bg-white/5 rounded-lg transition-colors">
-                        <button
-                          onClick={() => {
-                            setCurrentUser(user);
-                            setShowUserDropdown(false);
-                          }}
-                          className={cn(
-                            "flex-1 text-left text-sm",
-                            currentUser === user ? "text-primary-glow font-bold" : "text-white/70"
-                          )}
-                        >
-                          {user}
-                        </button>
-                        {user !== "Matt Burchett" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowDeleteConfirm(user);
-                            }}
-                            className="p-1 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                            title="Delete User"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <div className="h-px bg-white/10 my-1" />
-                    <button
-                      onClick={() => {
-                        setShowAddUserModal(true);
-                        setShowUserDropdown(false);
-                      }}
-                      className="flex items-center gap-2 p-2 text-sm text-primary-glow hover:bg-primary/10 rounded-lg transition-colors w-full"
-                    >
-                      <Plus size={14} />
-                      Add New User
-                    </button>
+            {session ? (
+              <div className="w-full glass-panel p-3 rounded-lg flex items-center justify-between group">
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 rounded-full bg-primary/10 text-primary-glow">
+                    <User size={16} />
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="text-sm font-medium text-white/90 truncate">{currentUser || session.user?.name}</span>
+                    <span className="text-xs text-white/50 truncate max-w-[120px]">{session.user?.email}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="p-1.5 text-white/40 hover:text-red-400 transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="w-full glass-panel p-3 rounded-lg flex items-center justify-center gap-2 hover:bg-white/5 transition-all group"
+              >
+                <LogIn size={16} className="text-primary-glow" />
+                <span className="text-sm font-medium text-white/90">Connect to Yggdrasil</span>
+              </button>
+            )}
           </div>
           <button
             onClick={() => setCalendarExpanded(true)}
@@ -909,7 +849,7 @@ export default function Home() {
           </button>
 
           {/* News Feed */}
-          <NewsFeed currentUser={currentUser} apiBaseUrl={API_BASE_URL} />
+          <NewsFeed apiBaseUrl={API_BASE_URL} fetcher={authenticatedFetch} />
         </aside>
       )}
 
@@ -1456,85 +1396,20 @@ export default function Home() {
           </div>
         )}
       </AnimatePresence>
-      {/* Add User Modal */}
-      <AnimatePresence>
-        {showAddUserModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel w-full max-w-md p-6 rounded-2xl flex flex-col gap-4"
-            >
-              <h3 className="text-xl font-cinzel text-primary-glow">Add New User</h3>
-              <input
-                type="text"
-                value={newUserName}
-                onChange={(e) => setNewUserName(e.target.value)}
-                placeholder="Enter user name"
-                className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary/50"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowAddUserModal(false)}
-                  className="px-4 py-2 text-white/60 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddUser}
-                  disabled={!newUserName.trim()}
-                  className="px-6 py-2 bg-primary hover:bg-primary-glow text-black font-bold rounded-lg transition-all disabled:opacity-50"
-                >
-                  Add User
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Delete User Confirm Modal */}
-      <AnimatePresence>
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel w-full max-w-md p-6 rounded-2xl flex flex-col gap-4 border-red-500/30"
-            >
-              <h3 className="text-xl font-cinzel text-red-400">Delete User?</h3>
-              <p className="text-white/70">
-                Are you sure you want to delete <strong>{showDeleteConfirm}</strong>? This will permanently erase their memory database. This action cannot be undone.
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="px-4 py-2 text-white/60 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDeleteUser(showDeleteConfirm)}
-                  className="px-6 py-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/50 font-bold rounded-lg transition-all"
-                >
-                  Delete Permanently
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onComplete={handleOnboardingComplete}
+        apiClient={{ post: (url: string, body: any) => authenticatedFetch(API_BASE_URL + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }}
+      />
 
       {/* Journal View Modal */}
       <AnimatePresence>
         {selectedJournalDate && (
           <JournalView
             date={selectedJournalDate}
-            currentUser={currentUser}
             apiBaseUrl={API_BASE_URL}
+            fetcher={authenticatedFetch}
             onClose={() => setSelectedJournalDate(null)}
             onOpenCooking={(recipe) => {
               setRecipe(recipe);

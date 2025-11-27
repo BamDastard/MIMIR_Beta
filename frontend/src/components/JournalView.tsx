@@ -5,8 +5,8 @@ import ReactMarkdown from 'react-markdown';
 
 type JournalViewProps = {
     date: string;
-    currentUser: string;
     apiBaseUrl: string;
+    fetcher: (url: string, options?: any) => Promise<Response>;
     onClose: () => void;
     onOpenCooking: (recipe: any) => void;
 };
@@ -24,7 +24,7 @@ type JournalData = {
     recipe: any | null;
 };
 
-export default function JournalView({ date, currentUser, apiBaseUrl, onClose, onOpenCooking }: JournalViewProps) {
+export default function JournalView({ date, apiBaseUrl, fetcher, onClose, onOpenCooking }: JournalViewProps) {
     const [data, setData] = useState<JournalData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export default function JournalView({ date, currentUser, apiBaseUrl, onClose, on
     useEffect(() => {
         const fetchJournal = async () => {
             try {
-                const res = await fetch(`${apiBaseUrl}/journal/${date}?user_id=${encodeURIComponent(currentUser)}`);
+                const res = await fetcher(`${apiBaseUrl}/journal/${date}`);
                 const json = await res.json();
 
                 if (json.error) {
@@ -48,7 +48,7 @@ export default function JournalView({ date, currentUser, apiBaseUrl, onClose, on
         };
 
         fetchJournal();
-    }, [date, currentUser, apiBaseUrl]);
+    }, [date, apiBaseUrl, fetcher]);
 
     // Runes for background animation
     const runes = ["ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ", "ᛈ", "ᛇ", "ᛉ", "ᛊ", "ᛏ", "ᛒ", "ᛖ", "ᛗ", "ᛚ", "ᛜ", "ᛞ", "ᛟ"];
@@ -163,7 +163,7 @@ export default function JournalView({ date, currentUser, apiBaseUrl, onClose, on
                                 </motion.div>
                             )}
 
-                            {/* Stats / CSV Download */}
+                            {/* Stats */}
                             <div className="mt-8 pt-8 border-t border-white/10 flex items-center justify-between">
                                 <div className="flex gap-6 text-sm text-white/40">
                                     <div className="flex flex-col">
@@ -179,17 +179,6 @@ export default function JournalView({ date, currentUser, apiBaseUrl, onClose, on
                                         <span className="text-xl text-red-400/80 font-mono">{data.stats.tool_errors}</span>
                                     </div>
                                 </div>
-
-                                <a
-                                    href={`${apiBaseUrl}/journal_attachments/journal_stats_${currentUser.replace(/[^a-zA-Z0-9]/g, '')}_${date}.csv`}
-                                    download={`journal_stats_${date}.csv`}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all border border-white/5 hover:border-white/20"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    <Download size={16} />
-                                    <span className="text-sm">Download Data (.csv)</span>
-                                </a>
                             </div>
 
                         </div>

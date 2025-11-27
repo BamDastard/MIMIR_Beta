@@ -33,7 +33,7 @@ daily_logs/
 journal_entries/
 journal_attachments/
 generate_journal_now.py
-ROADMAP*.md
+ROADMAP_ANDROID.md
 
 # OS
 .DS_Store

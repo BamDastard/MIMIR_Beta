@@ -41,8 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from backend.core.user_manager import user_manager
+
 # Authentication Middleware
-from fastapi import Request, HTTPException, status
+from fastapi import Request, HTTPException, status, Response
 
 async def verify_google_token(token: str):
     try:
@@ -57,27 +59,38 @@ async def auth_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
         
-    # Skip auth for health check and docs (if needed)
-    if request.url.path == "/" or request.url.path == "/docs" or request.url.path == "/openapi.json":
+    # Skip auth for health check and docs
+    if request.url.path in ["/", "/docs", "/openapi.json"]:
         return await call_next(request)
 
-    # For now, we are permissive in dev mode if no client ID is set
-    if not GOOGLE_CLIENT_ID:
-        # print("Warning: GOOGLE_CLIENT_ID not set, skipping auth verification")
-        return await call_next(request)
-
+    # Allow unauthenticated access to user check endpoints (to prevent catch-22)
+    # Actually, /user/me and /user/onboard REQUIRE auth token, but might not have a profile yet.
+    
     auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        # Allow unauthenticated for now until frontend is ready
-        # return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
-        pass 
+    
+    # Development Mode (No Client ID) - Permissive
+    if not GOOGLE_CLIENT_ID:
+        # Mock user for dev
+        request.state.user_auth_id = "dev_user_123"
+        request.state.user_email = "dev@example.com"
+        return await call_next(request)
 
-    # In a real scenario, we would enforce it:
-    # token = auth_header.split(' ')[1]
-    # user_info = await verify_google_token(token)
-    # if not user_info:
-    #     return JSONResponse(status_code=401, content={"error": "Invalid token"})
-    # request.state.user = user_info
+    # Production Mode - Strict
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return Response(status_code=401, content=json.dumps({"error": "Missing or invalid token"}), media_type="application/json")
+
+    token = auth_header.split(' ')[1]
+    user_info = await verify_google_token(token)
+    
+    if not user_info:
+        return Response(status_code=401, content=json.dumps({"error": "Invalid token"}), media_type="application/json")
+    
+    # Inject User Info into Request State
+    request.state.user_auth_id = user_info['sub']
+    request.state.user_email = user_info.get('email', '')
+    
+    # Note: We do NOT check for profile existence here. 
+    # That is handled by the endpoints. /user/onboard needs to work even if no profile exists.
 
     response = await call_next(request)
     return response
@@ -88,7 +101,6 @@ app.mount("/journal_attachments", StaticFiles(directory="journal_attachments"), 
 
 class ChatRequest(BaseModel):
     message: str
-    user_id: str = "Matt Burchett" # Default for now
     personality_intensity: int = 75 # 0-100, default 75%
 
 class ChatResponse(BaseModel):
@@ -101,62 +113,33 @@ class ChatResponse(BaseModel):
 def read_root():
     return {"status": "MIMIR is awake"}
 
-# User Management
-USERS_FILE = "users.json"
-DEFAULT_USERS = ["Matt Burchett", "Kira McCallister", "Ruth Ann Rawlings", "Hunter Coleman"]
+# User Management Endpoints
+@app.get("/user/me")
+def get_current_user(request: Request):
+    auth_id = request.state.user_auth_id
+    profile = user_manager.get_profile(auth_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    return profile
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        save_users(DEFAULT_USERS)
-        return DEFAULT_USERS
-    try:
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return DEFAULT_USERS
+class OnboardRequest(BaseModel):
+    display_name: str
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
-
-@app.get("/users")
-def get_users():
-    return {"users": load_users()}
-
-@app.post("/users")
-def add_user(user: dict):
-    name = user.get("name")
-    if not name:
-        return {"error": "Name is required"}
+@app.post("/user/onboard")
+def onboard_user(request: Request, data: OnboardRequest):
+    auth_id = request.state.user_auth_id
+    email = request.state.user_email
     
-    users = load_users()
-    if name in users:
-        return {"error": "User already exists"}
-    
-    users.append(name)
-    save_users(users)
-    return {"users": users}
-
-@app.delete("/users/{user_id}")
-def delete_user(user_id: str):
-    users = load_users()
-    if user_id not in users:
-        return {"error": "User not found"}
-    
-    if user_id == "Matt Burchett":
-        return {"error": "Cannot delete default admin user"}
+    if not data.display_name.strip():
+        raise HTTPException(status_code=400, detail="Display name is required")
         
-    users.remove(user_id)
-    save_users(users)
-    
-    # Delete memory
-    mimir_memory.delete_memory(user_id)
-    
-    return {"users": users}
+    profile = user_manager.create_profile(auth_id, email, data.display_name)
+    return profile
 
 from fastapi.responses import StreamingResponse
 import asyncio
 
+# Ensure necessary directories exist on startup
 # Ensure necessary directories exist on startup
 @app.on_event("startup")
 async def startup_event():
@@ -165,19 +148,28 @@ async def startup_event():
         os.makedirs(d, exist_ok=True)
         print(f"[STARTUP] Ensured directory exists: {d}")
 
-    # Ensure users.json exists
-    if not os.path.exists("users.json"):
-        with open("users.json", "w") as f:
-            json.dump({"users": ["Matt Burchett"]}, f)
-        print("[STARTUP] Created default users.json")
+    # Ensure user_profiles.json exists
+    if not os.path.exists("user_profiles.json"):
+        with open("user_profiles.json", "w") as f:
+            json.dump({}, f)
+        print("[STARTUP] Created empty user_profiles.json")
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: Request, body: ChatRequest):
     try:
         from datetime import datetime
-        user_msg = request.message
-        personality = request.personality_intensity
-        user_id = request.user_id
+        user_msg = body.message
+        personality = body.personality_intensity
+        
+        # Get Authenticated User
+        auth_id = request.state.user_auth_id
+        profile = user_manager.get_profile(auth_id)
+        
+        if not profile:
+            raise HTTPException(status_code=403, detail="User not onboarded")
+            
+        user_id = auth_id # Use Auth ID for internal storage
+        display_name = profile.display_name # Use Display Name for AI Context
         
         async def event_generator():
             try:
@@ -187,7 +179,7 @@ async def chat(request: ChatRequest):
                 
                 # 2. Add current date/time to context
                 current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
-                time_context = f"Current Date and Time: {current_time}\\nUser: {user_id}"
+                time_context = f"Current Date and Time: {current_time}\\nUser Name: {display_name}"
                 
                 if context:
                     context = f"{time_context}\\n\\n{context}"
@@ -290,8 +282,9 @@ def read_document_content(file_path: str, content: bytes = None) -> str:
         return ""
 
 @app.post("/upload")
-async def upload_document(file: UploadFile = File(...), user_id: str = Form("Matt Burchett")):
+async def upload_document(request: Request, file: UploadFile = File(...)):
     """Upload a document to MIMIR's memory"""
+    user_id = request.state.user_auth_id
     try:
         content = await file.read()
         text = read_document_content(file.filename, content)
@@ -302,7 +295,7 @@ async def upload_document(file: UploadFile = File(...), user_id: str = Form("Mat
         # Store in memory for specific user
         mimir_memory.remember(text, user_id=user_id, metadata={"source": file.filename, "type": "document"})
         
-        return {"status": "success", "message": f"Document '{file.filename}' has been added to MIMIR's memory for {user_id}"}
+        return {"status": "success", "message": f"Document '{file.filename}' has been added to MIMIR's memory"}
     except Exception as e:
         return {"status": "error", "message": f"Error processing file: {str(e)}"}
 
@@ -326,16 +319,17 @@ async def upload_temp(file: UploadFile = File(...)):
 from backend.core.calendar import CalendarManager
 
 @app.get("/calendar/events")
-async def get_calendar_events(start_date: str = None, end_date: str = None, user_id: str = "Matt Burchett"):
+async def get_calendar_events(request: Request, start_date: str = None, end_date: str = None):
     """Get all calendar events or filter by date range"""
+    user_id = request.state.user_auth_id
     calendar_manager = CalendarManager(user_id=user_id)
     events = calendar_manager.get_events(start_date, end_date)
     return {"events": events}
 
 @app.post("/calendar/events")
-async def create_calendar_event(event: dict):
+async def create_calendar_event(request: Request, event: dict):
     """Create a new calendar event"""
-    user_id = event.get('user_id', 'Matt Burchett')
+    user_id = request.state.user_auth_id
     calendar_manager = CalendarManager(user_id=user_id)
     result = calendar_manager.create_event(
         subject=event['subject'],
@@ -347,16 +341,17 @@ async def create_calendar_event(event: dict):
     return result
 
 @app.put("/calendar/events/{event_id}")
-async def update_calendar_event(event_id: str, event: dict):
+async def update_calendar_event(request: Request, event_id: str, event: dict):
     """Update a calendar event"""
-    user_id = event.get('user_id', 'Matt Burchett')
+    user_id = request.state.user_auth_id
     calendar_manager = CalendarManager(user_id=user_id)
     result = calendar_manager.update_event(event_id, **{k: v for k, v in event.items() if k != 'user_id'})
     return result
 
 @app.delete("/calendar/events/{event_id}")
-async def delete_calendar_event(event_id: str, user_id: str = "Matt Burchett"):
+async def delete_calendar_event(request: Request, event_id: str):
     """Delete a calendar event"""
+    user_id = request.state.user_auth_id
     calendar_manager = CalendarManager(user_id=user_id)
     success = calendar_manager.delete_event(event_id)
     return {"success": success}
@@ -367,8 +362,9 @@ async def get_top_news(refresh: bool = False):
     return {"news": news_manager.get_top_news(force_refresh=refresh)}
 
 @app.post("/news/log")
-async def log_news_access(user_id: str = Form(...), title: str = Form(...), url: str = Form(...)):
+async def log_news_access(request: Request, title: str = Form(...), url: str = Form(...)):
     """Log that a user accessed a news item."""
+    user_id = request.state.user_auth_id
     daily_journal.log_interaction(user_id, "action", f"Read news: {title} ({url})")
     return {"status": "logged"}
 
@@ -397,8 +393,9 @@ async def open_file(path: str = Form(...)):
         return {"error": str(e)}
 
 @app.get("/journal/{date_str}")
-async def get_journal_entry(date_str: str, user_id: str = "Matt Burchett"):
+async def get_journal_entry(request: Request, date_str: str):
     """Get the journal entry for a specific date."""
+    user_id = request.state.user_auth_id
     safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
     journal_dir = os.path.join(os.getcwd(), "journal_entries")
     journal_path = os.path.join(journal_dir, f"{safe_id}_{date_str}.json")

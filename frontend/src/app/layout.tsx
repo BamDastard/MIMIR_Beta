@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: "Ancient Norse AI Assistant",
 };
 
+import { Providers } from "./providers";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,7 +29,9 @@ export default function RootLayout({
       <body
         className={`${cinzel.variable} ${inter.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
