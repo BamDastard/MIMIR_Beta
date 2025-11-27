@@ -2,10 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Volume2, VolumeX, Upload, Calendar, ChevronLeft, ChevronRight, X, Plus, RefreshCw, ChefHat, ArrowLeft, ArrowRight, Paperclip, Camera, User, Trash2, ChevronDown } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, Upload, Calendar, ChevronLeft, ChevronRight, X, Plus, RefreshCw, ChefHat, ArrowLeft, ArrowRight, Paperclip, Camera, User, Trash2, ChevronDown, LogOut, LogIn } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import NewsFeed from '@/components/NewsFeed';
+import JournalView from '@/components/JournalView';
+import { useSession, signIn, signOut } from "next-auth/react";
+import OnboardingModal from '@/components/OnboardingModal';
 
 // Utility for tailwind class merging
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -14,7 +18,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -29,6 +33,7 @@ type CalendarEvent = {
   start_time?: string;
   end_time?: string;
   details?: string;
+  attachment?: string;
 };
 
 type Recipe = {
@@ -38,6 +43,7 @@ type Recipe = {
 };
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -56,16 +62,16 @@ export default function Home() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-  // User Management State
-  const [users, setUsers] = useState<string[]>([]);
-  const [currentUser, setCurrentUser] = useState<string>('Matt Burchett');
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [newUserName, setNewUserName] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  // Journal State
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
+
+  // User Management State (New)
+  const [currentUser, setCurrentUser] = useState<string | null>(null); // Display Name
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Conversation Mode State
   const [conversationMode, setConversationMode] = useState(false);
@@ -92,7 +98,6 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const silenceTimer = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef('');
 
@@ -206,6 +211,8 @@ export default function Home() {
     });
   };
 
+  const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
+
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
 
@@ -218,75 +225,92 @@ export default function Home() {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setThinkingStatus("Thinking...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: content,
           personality_intensity: personalityIntensity,
-          user_id: currentUser
+          // user_id removed, handled by auth token
         }),
       });
 
       if (!response.ok) throw new Error('Failed to fetch response');
+      if (!response.body) throw new Error('No response body');
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      const botMessage: Message = {
-        role: 'assistant',
-        content: data.text,
-        timestamp: Date.now(),
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      setMessages(prev => [...prev, botMessage]);
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      if (data.audio_base64) {
-        playAudio(data.audio_base64);
-      }
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            console.log("Stream line:", line);
+            const data = JSON.parse(line);
 
-      // Check for Cooking Tools
-      if (data.tools_used && data.tool_results) {
-        // Start Cooking
-        if (data.tools_used.includes('start_cooking')) {
-          const cookingResult = data.tool_results.find((r: any) => r.tool === 'start_cooking');
-          if (cookingResult && cookingResult.result) {
-            // Check if there was an error
-            if (cookingResult.result.status === 'error') {
-              console.error('Cooking tool error:', cookingResult.result.message);
-              // Don't activate cooking mode on error - MIMIR will retry
-            } else if (cookingResult.result.recipe) {
-              setRecipe(cookingResult.result.recipe);
-              setCookingMode(true);
-              setCurrentStep(0);
+            if (data.type === 'status') {
+              setThinkingStatus(data.content);
+            } else if (data.type === 'response') {
+              setThinkingStatus(null);
+              const botMessage: Message = {
+                role: 'assistant',
+                content: data.text,
+                timestamp: Date.now(),
+              };
+              setMessages(prev => [...prev, botMessage]);
+
+              if (data.audio_base64) {
+                playAudio(data.audio_base64);
+              }
+
+              // Handle Tools
+              if (data.tools_used && data.tool_results) {
+                // Cooking
+                if (data.tools_used.includes('start_cooking')) {
+                  const cookingResult = data.tool_results.find((r: any) => r.tool === 'start_cooking');
+                  if (cookingResult?.result?.recipe) {
+                    setRecipe(cookingResult.result.recipe);
+                    setCookingMode(true);
+                    setCurrentStep(0);
+                  }
+                }
+                // Navigation
+                if (data.tools_used.includes('cooking_navigation')) {
+                  const navResult = data.tool_results.find((r: any) => r.tool === 'cooking_navigation');
+                  if (navResult?.result) {
+                    const action = navResult.result.action;
+                    if (action === 'next') setCurrentStep(prev => Math.min((recipe?.steps.length || 1) - 1, prev + 1));
+                    if (action === 'prev') setCurrentStep(prev => Math.max(0, prev - 1));
+                    if (action === 'goto' && navResult.result.step_index !== undefined) setCurrentStep(navResult.result.step_index);
+                  }
+                }
+                // Calendar
+                if (data.tools_used.some((tool: string) => ['calendar_create', 'calendar_update', 'calendar_delete'].includes(tool))) {
+                  await wait(100);
+                  await fetchEvents();
+                }
+              }
             }
+          } catch (e) {
+            console.error('Error parsing stream line:', line, e);
           }
         }
-
-        // Navigation
-        if (data.tools_used.includes('cooking_navigation')) {
-          const navResult = data.tool_results.find((r: any) => r.tool === 'cooking_navigation');
-          if (navResult && navResult.result) {
-            const action = navResult.result.action;
-            if (action === 'next') setCurrentStep(prev => Math.min((recipe?.steps.length || 1) - 1, prev + 1));
-            if (action === 'prev') setCurrentStep(prev => Math.max(0, prev - 1));
-            if (action === 'goto' && navResult.result.step_index !== undefined) setCurrentStep(navResult.result.step_index);
-          }
-        }
-      }
-
-      // Check if calendar tools were used and refresh events
-      if (data.tools_used && data.tools_used.some((tool: string) =>
-        ['calendar_create', 'calendar_update', 'calendar_delete'].includes(tool)
-      )) {
-        console.log('Calendar tool used, refreshing events...');
-        await wait(100);
-        await fetchEvents();
       }
 
     } catch (error) {
       console.error(error);
+      setThinkingStatus(null);
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: 'The threads of fate are tangled. I cannot respond.',
@@ -294,6 +318,7 @@ export default function Home() {
       }]);
     } finally {
       setIsLoading(false);
+      setThinkingStatus(null);
     }
   };
 
@@ -309,13 +334,13 @@ export default function Home() {
     if (!finalContent.trim()) return;
 
     await handleSendMessage(finalContent);
-    setAttachedFiles([]); // Clear attachments after sending
+    setAttachedFiles([]);
   };
 
   // Calendar Functions
   const fetchEvents = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/calendar/events?user_id=${encodeURIComponent(currentUser)}&t=${Date.now()}`, { cache: 'no-store' });
+      const response = await authenticatedFetch(`${API_BASE_URL}/calendar/events?t=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
       console.log('Fetched events:', data.events);
       setEvents(data.events);
@@ -334,7 +359,7 @@ export default function Home() {
 
     try {
       const dateStr = selectedDate.toISOString().split('T')[0];
-      const response = await fetch(`${API_BASE_URL}/calendar/events`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/calendar/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,7 +368,6 @@ export default function Home() {
           start_time: newEventTime || undefined,
           end_time: newEventEndTime || undefined,
           details: newEventDetails,
-          user_id: currentUser
         }),
       });
 
@@ -363,7 +387,7 @@ export default function Home() {
 
   const handleDeleteEvent = async (eventId: string) => {
     try {
-      await fetch(`${API_BASE_URL}/calendar/events/${eventId}?user_id=${encodeURIComponent(currentUser)}`, {
+      await authenticatedFetch(`${API_BASE_URL}/calendar/events/${eventId}`, {
         method: 'DELETE',
       });
       await wait(100);
@@ -378,7 +402,7 @@ export default function Home() {
     if (!editingEvent) return;
 
     try {
-      await fetch(`${API_BASE_URL}/calendar/events/${editingEvent.id}`, {
+      await authenticatedFetch(`${API_BASE_URL}/calendar/events/${editingEvent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -386,7 +410,6 @@ export default function Home() {
           details: newEventDetails,
           start_time: newEventTime || undefined,
           end_time: newEventEndTime || undefined,
-          user_id: currentUser
         }),
       });
 
@@ -422,6 +445,19 @@ export default function Home() {
     setShowEventModal(true);
   };
 
+  const handleOpenFile = async (path: string) => {
+    const formData = new FormData();
+    formData.append('path', path);
+    try {
+      await authenticatedFetch(`${API_BASE_URL}/open_file`, {
+        method: 'POST',
+        body: formData
+      });
+    } catch (e) {
+      console.error("Failed to open file:", e);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -429,10 +465,9 @@ export default function Home() {
     setUploadStatus('Uploading...');
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('user_id', currentUser);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/upload`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -464,7 +499,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/upload_temp`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/upload_temp`, {
         method: 'POST',
         body: formData,
       });
@@ -481,62 +516,43 @@ export default function Home() {
     }
   };
 
-  // Fetch Users
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/users`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.users && data.users.length > 0) {
-          setUsers(data.users);
-          // Ensure current user is in list, else default to first
-          if (!data.users.includes(currentUser)) {
-            setCurrentUser(data.users[0]);
-          }
-        }
-      })
-      .catch(err => console.error("Failed to fetch users:", err));
-  }, []);
+  // Authenticated Fetch Helper
+  const authenticatedFetch = async (url: string, options: any = {}) => {
+    // If no session (e.g. dev mode without auth), we might still want to try if backend is permissive
+    // But for now, let's assume we need token if session exists
+    const headers = {
+      ...options.headers,
+    };
 
-  // User Management Functions
-  const handleAddUser = async () => {
-    if (!newUserName.trim()) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newUserName })
-      });
-      const data = await res.json();
-      if (data.users) {
-        setUsers(data.users);
-        setCurrentUser(newUserName);
-        setShowAddUserModal(false);
-        setNewUserName('');
-      }
-    } catch (err) {
-      console.error("Failed to add user:", err);
+    if (session && (session as any).idToken) {
+      headers['Authorization'] = `Bearer ${(session as any).idToken}`;
     }
+
+    return fetch(url, { ...options, headers });
   };
 
-  const handleDeleteUser = async (userToDelete: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(userToDelete)}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (data.users) {
-        setUsers(data.users);
-        if (currentUser === userToDelete) {
-          setCurrentUser(data.users[0] || 'Default User');
-        }
-        setShowDeleteConfirm(null);
-      } else if (data.error) {
-        alert(data.error);
-        setShowDeleteConfirm(null);
-      }
-    } catch (err) {
-      console.error("Failed to delete user:", err);
+  // Check Onboarding Status
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      authenticatedFetch(`${API_BASE_URL}/user/me`)
+        .then(async (res) => {
+          if (res.status === 404 || res.status === 403) {
+            setShowOnboarding(true);
+          } else if (res.ok) {
+            const profile = await res.json();
+            setCurrentUser(profile.display_name);
+            setShowOnboarding(false);
+          }
+        })
+        .catch(err => console.error("Failed to check user status:", err));
+    } else if (status === 'unauthenticated') {
+      setCurrentUser(null);
     }
+  }, [status, session]);
+
+  const handleOnboardingComplete = (displayName: string) => {
+    setCurrentUser(displayName);
+    setShowOnboarding(false);
   };
 
   // Camera Handling
@@ -574,7 +590,7 @@ export default function Home() {
             formData.append('file', file);
 
             try {
-              const response = await fetch(`${API_BASE_URL}/upload_temp`, {
+              const response = await authenticatedFetch(`${API_BASE_URL}/upload_temp`, {
                 method: 'POST',
                 body: formData,
               });
@@ -616,7 +632,7 @@ export default function Home() {
           video.currentTime = 0.5;
         }}
       >
-        <source src="/MIMIRs_Head.mp4" type="video/mp4" />
+        <source src="/mimir_loop.webm" type="video/webm" />
       </video>
       <div className="fixed inset-0 z-0 bg-black/70 backdrop-blur-[2px]" /> {/* Dark overlay for readability */}
 
@@ -747,74 +763,37 @@ export default function Home() {
 
       {/* Right Sidebar - Minimal Calendar */}
       {!cookingMode && (
-        <aside className="fixed right-4 top-24 z-40 flex flex-col gap-4">
-          {/* User Dropdown */}
+        <aside className="fixed right-4 top-24 z-40 flex flex-col gap-4 w-64">
+          {/* Auth Status */}
           <div className="relative w-64">
-            <button
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="w-full glass-panel p-3 rounded-lg flex items-center justify-between hover:border-primary/50 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-1.5 rounded-full bg-primary/10 text-primary-glow group-hover:bg-primary/20 transition-colors">
-                  <User size={16} />
-                </div>
-                <span className="text-sm font-medium text-white/90">{currentUser}</span>
-              </div>
-              <ChevronDown size={14} className="text-white/50 group-hover:text-white/80 transition-colors" />
-            </button>
-
-            <AnimatePresence>
-              {showUserDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute right-0 top-full mt-2 w-full bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
-                >
-                  <div className="p-2 flex flex-col gap-1">
-                    {users.map(user => (
-                      <div key={user} className="flex items-center justify-between group p-2 hover:bg-white/5 rounded-lg transition-colors">
-                        <button
-                          onClick={() => {
-                            setCurrentUser(user);
-                            setShowUserDropdown(false);
-                          }}
-                          className={cn(
-                            "flex-1 text-left text-sm",
-                            currentUser === user ? "text-primary-glow font-bold" : "text-white/70"
-                          )}
-                        >
-                          {user}
-                        </button>
-                        {user !== "Matt Burchett" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowDeleteConfirm(user);
-                            }}
-                            className="p-1 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                            title="Delete User"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <div className="h-px bg-white/10 my-1" />
-                    <button
-                      onClick={() => {
-                        setShowAddUserModal(true);
-                        setShowUserDropdown(false);
-                      }}
-                      className="flex items-center gap-2 p-2 text-sm text-primary-glow hover:bg-primary/10 rounded-lg transition-colors w-full"
-                    >
-                      <Plus size={14} />
-                      Add New User
-                    </button>
+            {session ? (
+              <div className="w-full glass-panel p-3 rounded-lg flex items-center justify-between group">
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 rounded-full bg-primary/10 text-primary-glow">
+                    <User size={16} />
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="text-sm font-medium text-white/90 truncate">{currentUser || session.user?.name}</span>
+                    <span className="text-xs text-white/50 truncate max-w-[120px]">{session.user?.email}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="p-1.5 text-white/40 hover:text-red-400 transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="w-full glass-panel p-3 rounded-lg flex items-center justify-center gap-2 hover:bg-white/5 transition-all group"
+              >
+                <LogIn size={16} className="text-primary-glow" />
+                <span className="text-sm font-medium text-white/90">Connect to Yggdrasil</span>
+              </button>
+            )}
           </div>
           <button
             onClick={() => setCalendarExpanded(true)}
@@ -868,6 +847,9 @@ export default function Home() {
               })}
             </div>
           </button>
+
+          {/* News Feed */}
+          <NewsFeed apiBaseUrl={API_BASE_URL} fetcher={authenticatedFetch} />
         </aside>
       )}
 
@@ -879,120 +861,129 @@ export default function Home() {
 
         {/* Expanded Calendar View - Takes over everything if active */}
         {calendarExpanded ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass-panel p-6 rounded-2xl w-full h-[calc(100vh-8rem)] flex flex-col"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setCalendarExpanded(false)}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-                <h2 className="text-2xl font-cinzel text-primary-glow">
-                  {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                </h2>
-                <div className="flex gap-2">
+          <>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-panel p-6 rounded-2xl w-full h-[calc(100vh-8rem)] flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
                   <button
-                    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
-                    className="p-1 hover:bg-white/5 rounded-full"
+                    onClick={() => setCalendarExpanded(false)}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
                   >
-                    <ChevronLeft className="w-5 h-5" />
+                    <X className="w-5 h-5" />
                   </button>
-                  <button
-                    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
-                    className="p-1 hover:bg-white/5 rounded-full"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                {lastUpdated && (
-                  <span className="text-xs text-foreground/40 font-mono">
-                    Updated: {lastUpdated.toLocaleTimeString()}
-                  </span>
-                )}
-                <button
-                  onClick={fetchEvents}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                  title="Refresh Calendar"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => openCreateModal(new Date())}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-lg transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Event</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="flex-1 grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 overflow-y-auto">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="bg-black/40 p-2 text-center text-sm font-medium text-foreground/60">
-                  {day}
-                </div>
-              ))}
-              {Array.from({ length: 35 }).map((_, i) => {
-                const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-                const startDay = date.getDay();
-                const dayNum = i - startDay + 1;
-                const currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), dayNum);
-                // Adjust for timezone offset
-                const offset = currentDate.getTimezoneOffset();
-                const adjustedDate = new Date(currentDate.getTime() - (offset * 60 * 1000));
-                const dateStr = adjustedDate.toISOString().split('T')[0];
-
-                const isCurrentMonth = currentDate.getMonth() === selectedDate.getMonth();
-                const dayEvents = events.filter(e => e.date === dateStr);
-
-                return (
-                  <div
-                    key={i}
-                    onClick={() => isCurrentMonth && openCreateModal(currentDate)}
-                    className={cn(
-                      "bg-black/20 p-2 min-h-[100px] transition-colors relative group",
-                      isCurrentMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
-                      currentDate.toDateString() === new Date().toDateString() && "bg-red-900/20 border border-red-500/30"
-                    )}
-                  >
-                    {dayNum > 0 && dayNum <= 31 && (
-                      <>
-                        <span className={cn(
-                          "text-sm font-medium",
-                          currentDate.toDateString() === new Date().toDateString() ? "text-red-400" : "text-foreground/60"
-                        )}>
-                          {dayNum}
-                        </span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          {dayEvents.map(event => (
-                            <button
-                              key={event.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(event);
-                              }}
-                              className="text-xs text-left px-2 py-1 rounded bg-primary/20 hover:bg-primary/40 truncate transition-colors"
-                            >
-                              {event.start_time && <span className="opacity-70 mr-1">{event.start_time}</span>}
-                              {event.subject}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                  <h2 className="text-2xl font-cinzel text-primary-glow">
+                    {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+                      className="p-1 hover:bg-white/5 rounded-full"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+                      className="p-1 hover:bg-white/5 rounded-full"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
-          </motion.div>
+                </div>
+                <div className="flex items-center gap-4">
+                  {lastUpdated && (
+                    <span className="text-xs text-foreground/40 font-mono">
+                      Updated: {lastUpdated.toLocaleTimeString()}
+                    </span>
+                  )}
+                  <button
+                    onClick={fetchEvents}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                    title="Refresh Calendar"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => openCreateModal(new Date())}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Event</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="flex-1 grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 overflow-y-auto">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="bg-black/40 p-2 text-center text-sm font-medium text-foreground/60">
+                    {day}
+                  </div>
+                ))}
+                {Array.from({ length: 35 }).map((_, i) => {
+                  const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+                  const startDay = date.getDay();
+                  const dayNum = i - startDay + 1;
+                  const currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), dayNum);
+                  // Adjust for timezone offset
+                  const offset = currentDate.getTimezoneOffset();
+                  const adjustedDate = new Date(currentDate.getTime() - (offset * 60 * 1000));
+                  const dateStr = adjustedDate.toISOString().split('T')[0];
+
+                  const isCurrentMonth = currentDate.getMonth() === selectedDate.getMonth();
+                  const dayEvents = events.filter(e => e.date === dateStr);
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => isCurrentMonth && openCreateModal(currentDate)}
+                      className={cn(
+                        "bg-black/20 p-2 min-h-[100px] transition-colors relative group",
+                        isCurrentMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
+                        currentDate.toDateString() === new Date().toDateString() && "bg-red-900/20 border border-red-500/30"
+                      )}
+                    >
+                      {dayNum > 0 && dayNum <= 31 && (
+                        <>
+                          <span className={cn(
+                            "text-sm font-medium",
+                            currentDate.toDateString() === new Date().toDateString() ? "text-red-400" : "text-foreground/60"
+                          )}>
+                            {dayNum}
+                          </span>
+                          <div className="mt-1 flex flex-col gap-1">
+                            {dayEvents.map(event => (
+                              <button
+                                key={event.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (event.subject === "Daily Journal") {
+                                    setSelectedJournalDate(event.date);
+                                  } else {
+                                    openEditModal(event);
+                                  }
+                                }}
+                                className="text-xs text-left px-2 py-1 rounded bg-primary/20 hover:bg-primary/40 truncate transition-colors"
+                              >
+                                {event.start_time && <span className="opacity-70 mr-1">{event.start_time}</span>}
+                                {event.subject}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )
+                      }
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+
+            {/* News Feed */}
+          </>
         ) : (
           /* Normal View (Chat + Optional Cooking Panel) */
           <>
@@ -1067,9 +1058,14 @@ export default function Home() {
                     className="flex justify-start w-full"
                   >
                     <div className="bg-black/40 border border-white/10 p-4 rounded-2xl rounded-tl-sm flex items-center gap-3 backdrop-blur-sm">
-                      <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <span className="text-sm text-primary-glow font-mono animate-pulse">
+                        {thinkingStatus || "Thinking..."}
+                      </span>
                     </div>
                   </motion.div>
                 )}
@@ -1317,6 +1313,19 @@ export default function Home() {
                   />
                 </div>
 
+                {editingEvent?.attachment && (
+                  <div className="flex items-center gap-2 text-sm bg-white/5 p-2 rounded-lg">
+                    <Paperclip size={14} className="text-primary" />
+                    <span className="truncate flex-1 text-white/70">{editingEvent.attachment.split(/[\\/]/).pop()}</span>
+                    <button
+                      onClick={() => handleOpenFile(editingEvent.attachment!)}
+                      className="text-primary-glow hover:underline text-xs"
+                    >
+                      Open
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex gap-3 mt-2">
                   {editingEvent && (
                     <button
@@ -1387,77 +1396,31 @@ export default function Home() {
           </div>
         )}
       </AnimatePresence>
-      {/* Add User Modal */}
-      <AnimatePresence>
-        {showAddUserModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel w-full max-w-md p-6 rounded-2xl flex flex-col gap-4"
-            >
-              <h3 className="text-xl font-cinzel text-primary-glow">Add New User</h3>
-              <input
-                type="text"
-                value={newUserName}
-                onChange={(e) => setNewUserName(e.target.value)}
-                placeholder="Enter user name"
-                className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary/50"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowAddUserModal(false)}
-                  className="px-4 py-2 text-white/60 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddUser}
-                  disabled={!newUserName.trim()}
-                  className="px-6 py-2 bg-primary hover:bg-primary-glow text-black font-bold rounded-lg transition-all disabled:opacity-50"
-                >
-                  Add User
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onComplete={handleOnboardingComplete}
+        apiClient={{ post: (url: string, body: any) => authenticatedFetch(API_BASE_URL + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }}
+      />
 
-      {/* Delete User Confirm Modal */}
+      {/* Journal View Modal */}
       <AnimatePresence>
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-panel w-full max-w-md p-6 rounded-2xl flex flex-col gap-4 border-red-500/30"
-            >
-              <h3 className="text-xl font-cinzel text-red-400">Delete User?</h3>
-              <p className="text-white/70">
-                Are you sure you want to delete <strong>{showDeleteConfirm}</strong>? This will permanently erase their memory database. This action cannot be undone.
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="px-4 py-2 text-white/60 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDeleteUser(showDeleteConfirm)}
-                  className="px-6 py-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/50 font-bold rounded-lg transition-all"
-                >
-                  Delete Permanently
-                </button>
-              </div>
-            </motion.div>
-          </div>
+        {selectedJournalDate && (
+          <JournalView
+            date={selectedJournalDate}
+            apiBaseUrl={API_BASE_URL}
+            fetcher={authenticatedFetch}
+            onClose={() => setSelectedJournalDate(null)}
+            onOpenCooking={(recipe) => {
+              setRecipe(recipe);
+              setCurrentStep(0);
+              setCookingMode(true);
+              setCalendarExpanded(false); // Ensure we see the cooking panel
+              setSelectedJournalDate(null);
+            }}
+          />
         )}
       </AnimatePresence>
-    </main >
+    </main>
   );
 }

@@ -27,6 +27,16 @@ users.json
 mimir_calendar.json
 *.log
 
+# Personal Data - Do Not Commit
+calendars/*.json
+daily_logs/
+journal_entries/
+journal_attachments/
+generate_journal_now.py
+ROADMAP_ANDROID.md
+
 # OS
 .DS_Store
-Thumbs.db
+
+# Android
+android/

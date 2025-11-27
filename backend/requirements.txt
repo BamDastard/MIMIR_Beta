@@ -7,6 +7,9 @@ langchain-chroma
 chromadb
 google-cloud-texttospeech
 python-dotenv
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
 
 PyPDF2
 python-docx
@@ -15,3 +18,6 @@ Pillow
 beautifulsoup4
 requests
 lxml
+lxml
+tzdata
+langchain-text-splitters

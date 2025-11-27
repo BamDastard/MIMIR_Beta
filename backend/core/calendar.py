@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import uuid
 
-CALENDAR_DIR = "./calendars"
+MIMIR_DATA_DIR = os.getenv("MIMIR_DATA_DIR", ".")
+CALENDAR_DIR = os.path.join(MIMIR_DATA_DIR, "calendars")
 
 class CalendarManager:
     def __init__(self, user_id: str = "Matt Burchett"):

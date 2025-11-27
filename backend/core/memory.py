@@ -2,6 +2,7 @@ import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,11 +11,19 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 class MimirMemory:
     def __init__(self):
-        # Resolve absolute path to project root/mimir_memory_db
-        # backend/core/memory.py -> backend/core -> backend -> root
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(current_dir))
-        self.base_directory = os.path.join(project_root, "mimir_memory_db")
+        # Resolve base directory (support for Cloud Run GCS mount)
+        data_dir = os.getenv("MIMIR_DATA_DIR")
+        if data_dir:
+            self.base_directory = os.path.join(data_dir, "mimir_memory_db")
+        else:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(current_dir))
+            self.base_directory = os.path.join(project_root, "mimir_memory_db")
+        
+        # Ensure directory exists for Cloud Run (ephemeral)
+        if not os.path.exists(self.base_directory):
+            os.makedirs(self.base_directory, exist_ok=True)
+            print(f"[MIMIR] Created new memory directory at {self.base_directory}")
         
         print(f"[MIMIR] Memory Base Directory: {self.base_directory}")
         
@@ -48,6 +57,7 @@ class MimirMemory:
     def remember(self, text: str, user_id: str = "Matt Burchett", metadata: dict = None):
         """
         Stores a piece of information in the user's vector database.
+        Splits large text into chunks for better retrieval.
         """
         if metadata is None:
             metadata = {}
@@ -55,10 +65,20 @@ class MimirMemory:
         # Ensure user_id is in metadata
         metadata["user_id"] = user_id
         
-        doc = Document(page_content=text, metadata=metadata)
+        # Split text into chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=100,
+            length_function=len,
+            is_separator_regex=False,
+        )
+        texts = text_splitter.split_text(text)
+        
+        docs = [Document(page_content=t, metadata=metadata) for t in texts]
+        
         store = self.get_vector_store(user_id)
-        store.add_documents([doc])
-        print(f"MIMIR remembered for {user_id}: {text[:50]}...")
+        store.add_documents(docs)
+        print(f"MIMIR remembered for {user_id}: {len(docs)} chunks.")
 
     def recall(self, query: str, user_id: str = "Matt Burchett", k: int = 3, max_chars: int = 1500000) -> str:
         """
