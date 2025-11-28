@@ -698,23 +698,52 @@ export default function Home() {
         ) : (
           /* Normal View (Chat + Optional Cooking Panel) */
           <>
-            <ChatInterface
-              messages={messages}
-              isLoading={isLoading}
-              thinkingStatus={thinkingStatus}
-              messagesEndRef={messagesEndRef}
-              cookingMode={cookingMode}
-              input={input}
-              setInput={setInput}
-              isListening={isListening}
-              conversationMode={conversationMode}
-              setConversationMode={setConversationMode}
-              handleSubmit={handleSubmit}
-              attachedFiles={attachedFiles}
-              onAttachmentSelect={handleAttachmentSelect}
-              startCamera={startCamera}
-              attachmentInputRef={attachmentInputRef}
-            />
+            {/* Chat Interface - Hidden on mobile during cooking mode */}
+            <div className={cn(
+              "w-full h-full flex flex-col",
+              cookingMode ? "hidden md:flex md:w-1/3" : "flex"
+            )}>
+              <ChatInterface
+                messages={messages}
+                isLoading={isLoading}
+                thinkingStatus={thinkingStatus}
+                messagesEndRef={messagesEndRef}
+                cookingMode={cookingMode}
+                input={input}
+                setInput={setInput}
+                isListening={isListening}
+                conversationMode={conversationMode}
+                setConversationMode={setConversationMode}
+                handleSubmit={handleSubmit}
+                attachedFiles={attachedFiles}
+                onAttachmentSelect={handleAttachmentSelect}
+                startCamera={startCamera}
+                attachmentInputRef={attachmentInputRef}
+              />
+            </div>
+
+            {/* Mobile Cooking Controls Overlay - Only Input Bar */}
+            {cookingMode && (
+              <div className="md:hidden fixed bottom-0 left-0 w-full z-50">
+                <ChatInterface
+                  messages={[]} // Hide messages
+                  isLoading={isLoading}
+                  thinkingStatus={null}
+                  messagesEndRef={messagesEndRef}
+                  cookingMode={cookingMode}
+                  input={input}
+                  setInput={setInput}
+                  isListening={isListening}
+                  conversationMode={conversationMode}
+                  setConversationMode={setConversationMode}
+                  handleSubmit={handleSubmit}
+                  attachedFiles={attachedFiles}
+                  onAttachmentSelect={handleAttachmentSelect}
+                  startCamera={startCamera}
+                  attachmentInputRef={attachmentInputRef}
+                />
+              </div>
+            )}
 
             <CookingView
               recipe={recipe}

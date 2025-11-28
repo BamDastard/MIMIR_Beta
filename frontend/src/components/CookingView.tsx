@@ -28,39 +28,39 @@ export default function CookingView({
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
-                    className="w-full md:w-2/3 glass-panel rounded-2xl p-6 flex flex-col h-full shrink-0"
+                    className="w-full md:w-2/3 glass-panel rounded-2xl p-4 md:p-6 flex flex-col h-full shrink-0 pb-24 md:pb-6"
                 >
                     {recipe ? (
                         <>
                             {/* Header */}
-                            <div className="mb-4 border-b border-white/10 pb-4 text-center">
-                                <h2 className="text-2xl font-cinzel text-primary-glow">{recipe.title}</h2>
+                            <div className="mb-4 border-b border-white/10 pb-4 text-center shrink-0">
+                                <h2 className="text-xl md:text-2xl font-cinzel text-primary-glow truncate px-2">{recipe.title}</h2>
                             </div>
 
-                            {/* Ingredients Section - Fixed Top 1/3 */}
-                            <div className="h-1/3 flex flex-col mb-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-lg font-medium text-primary flex items-center gap-2">
+                            {/* Ingredients Section - Collapsible/Scrollable on Mobile */}
+                            <div className="h-1/4 md:h-1/3 flex flex-col mb-4 shrink-0">
+                                <div className="flex items-center justify-between mb-2 md:mb-3">
+                                    <h3 className="text-base md:text-lg font-medium text-primary flex items-center gap-2">
                                         <div className="w-1 h-1 bg-primary rounded-full" /> Ingredients
                                     </h3>
                                     <span className="text-xs text-white/40 font-mono">{recipe.ingredients?.length || 0} items</span>
                                 </div>
-                                <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                    <div className="columns-1 sm:columns-2 lg:columns-3 gap-3 space-y-2">
+                                <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent bg-black/20 rounded-lg p-2">
+                                    <div className="grid grid-cols-1 gap-2">
                                         {recipe.ingredients?.map((ing, i) => (
-                                            <div key={i} className="flex items-center gap-2 text-sm text-foreground/80 bg-black/20 p-3 rounded-lg break-inside-avoid">
+                                            <div key={i} className="flex items-center gap-2 text-sm text-foreground/80 p-2 rounded-lg bg-white/5">
                                                 <div className="w-1.5 h-1.5 bg-primary/60 rounded-full shrink-0" />
-                                                <span>{ing}</span>
+                                                <span className="leading-tight">{ing}</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Current Step Section - Bottom 2/3 */}
-                            <div className="flex-1 flex flex-col bg-black/20 rounded-xl overflow-hidden">
+                            {/* Current Step Section - Takes remaining space */}
+                            <div className="flex-1 flex flex-col bg-black/20 rounded-xl overflow-hidden min-h-0">
                                 {/* Progress Bar */}
-                                <div className="w-full h-1 bg-white/5">
+                                <div className="w-full h-1 bg-white/5 shrink-0">
                                     <motion.div
                                         className="h-full bg-primary"
                                         initial={{ width: 0 }}
@@ -68,39 +68,41 @@ export default function CookingView({
                                     />
                                 </div>
 
-                                {/* Step Content - Takes remaining space */}
-                                <div className="flex-1 overflow-y-auto p-8 flex items-center justify-center">
+                                {/* Step Content */}
+                                <div className="flex-1 overflow-y-auto p-4 md:p-8 flex items-center justify-center">
                                     <AnimatePresence mode="wait">
-                                        <motion.p
+                                        <motion.div
                                             key={currentStep}
                                             initial={{ opacity: 0, y: 20 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             exit={{ opacity: 0, y: -20 }}
-                                            className="text-xl md:text-2xl lg:text-3xl font-light leading-relaxed text-white text-center max-w-4xl"
+                                            className="w-full text-center"
                                         >
-                                            {recipe.steps?.[currentStep] || "No step details available."}
-                                        </motion.p>
+                                            <p className="text-lg md:text-3xl font-light leading-relaxed text-white">
+                                                {recipe.steps?.[currentStep] || "No step details available."}
+                                            </p>
+                                        </motion.div>
                                     </AnimatePresence>
                                 </div>
 
-                                {/* Controls - Fixed at Bottom */}
-                                <div className="flex items-center justify-between p-4 border-t border-white/5 bg-black/20">
+                                {/* Controls */}
+                                <div className="flex items-center justify-between p-4 border-t border-white/5 bg-black/20 shrink-0">
                                     <button
                                         onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
                                         disabled={currentStep === 0}
-                                        className="flex items-center gap-2 px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                        className="flex items-center gap-2 px-4 md:px-6 py-3 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm md:text-base"
                                     >
-                                        <ArrowLeft className="w-5 h-5" /> Previous
+                                        <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden md:inline">Previous</span>
                                     </button>
-                                    <span className="font-mono text-sm text-white/40">
-                                        Step {currentStep + 1} of {recipe.steps?.length || 0}
+                                    <span className="font-mono text-xs md:text-sm text-white/40">
+                                        Step {currentStep + 1} / {recipe.steps?.length || 0}
                                     </span>
                                     <button
                                         onClick={() => setCurrentStep(Math.min((recipe.steps?.length || 1) - 1, currentStep + 1))}
                                         disabled={currentStep === (recipe.steps?.length || 1) - 1}
-                                        className="flex items-center gap-2 px-6 py-3 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary-glow disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                        className="flex items-center gap-2 px-4 md:px-6 py-3 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary-glow disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm md:text-base"
                                     >
-                                        Next <ArrowRight className="w-5 h-5" />
+                                        <span className="hidden md:inline">Next</span> <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
                                     </button>
                                 </div>
                             </div>
