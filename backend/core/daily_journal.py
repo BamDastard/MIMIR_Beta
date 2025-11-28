@@ -110,34 +110,56 @@ class DailyJournalManager:
         now = self.get_user_time(user_id)
         date_str = now.strftime("%Y-%m-%d")
         
+        # Helper to verify/repair calendar
+        async def verify_calendar_sync(date_str, attachment_path):
+            if os.path.exists(attachment_path):
+                # CSV exists, ensure calendar event exists and has attachment
+                calendar_manager = CalendarManager(user_id=user_id)
+                existing_events = calendar_manager.get_events(start_date=date_str, end_date=date_str)
+                journal_events = [e for e in existing_events if e['subject'] == "Daily Journal"]
+                
+                event_details = "Click to view daily summary."
+                
+                if not journal_events:
+                    print(f"[JOURNAL] Restoring missing calendar event for {date_str}")
+                    calendar_manager.create_event(
+                        subject="Daily Journal",
+                        date=date_str,
+                        start_time="23:59",
+                        end_time="23:59",
+                        details=event_details,
+                        attachment=attachment_path
+                    )
+                elif 'attachment' not in journal_events[0] or not journal_events[0]['attachment']:
+                    print(f"[JOURNAL] Repairing incomplete calendar event for {date_str}")
+                    calendar_manager.update_event(
+                        journal_events[0]['id'],
+                        attachment=attachment_path
+                    )
+                return True # Found and verified
+            return False # Not found
+
         # Check if it's 11:59 PM
         if now.hour == 23 and now.minute >= 59:
-            # Check if already generated
-            # We check if the attachment file exists as a proxy for "journal generated"
             safe_filename_id = "".join([c for c in user_id if c.isalnum()])
             attachment_filename = f"journal_stats_{safe_filename_id}_{date_str}.csv"
             attachment_path = os.path.join(JOURNAL_ATTACHMENTS_DIR, attachment_filename)
             
-            if not os.path.exists(attachment_path):
+            if not await verify_calendar_sync(date_str, attachment_path):
                 await self.generate_journal_entry(user_id, date_str)
                 return True
                 
-        # Also check for previous days that might have been missed (e.g. service was off)
-        # This is a bit harder without tracking "last run". 
-        # For now, we'll stick to the current day 11:59 PM trigger as primary.
-        # If the user opens the app the next day, we could check "yesterday".
-        
+        # Check yesterday
         yesterday = now - datetime.timedelta(days=1)
         yesterday_str = yesterday.strftime("%Y-%m-%d")
         yesterday_log = self._get_log_file(user_id, yesterday_str)
         
         if os.path.exists(yesterday_log):
-             # Check if journal exists for yesterday
             safe_filename_id = "".join([c for c in user_id if c.isalnum()])
             attachment_filename = f"journal_stats_{safe_filename_id}_{yesterday_str}.csv"
             attachment_path = os.path.join(JOURNAL_ATTACHMENTS_DIR, attachment_filename)
             
-            if not os.path.exists(attachment_path):
+            if not await verify_calendar_sync(yesterday_str, attachment_path):
                 print(f"[JOURNAL] Found un-journaled log for yesterday ({yesterday_str}). Generating...")
                 await self.generate_journal_entry(user_id, yesterday_str)
                 return True
