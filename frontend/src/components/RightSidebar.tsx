@@ -100,7 +100,10 @@ export default function RightSidebar({
 
                 {/* Minimal Calendar */}
                 <button
-                    onClick={() => setCalendarExpanded(true)}
+                    onClick={() => {
+                        if (onClose) onClose();
+                        setCalendarExpanded(true);
+                    }}
                     className="glass-panel p-4 rounded-lg hover:border-primary/50 transition-all group w-full md:w-64"
                 >
                     <div className="flex items-center justify-between mb-4">

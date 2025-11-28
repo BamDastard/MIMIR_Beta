@@ -750,6 +750,7 @@ export default function Home() {
               currentStep={currentStep}
               setCurrentStep={setCurrentStep}
               cookingMode={cookingMode}
+              onClose={() => setCookingMode(false)}
             />
           </>
         )}

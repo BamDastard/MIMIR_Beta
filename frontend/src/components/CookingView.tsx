@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChefHat, ArrowLeft, ArrowRight } from 'lucide-react';
+import { ChefHat, ArrowLeft, ArrowRight, X } from 'lucide-react';
 
 interface Recipe {
     title: string;
@@ -13,13 +13,15 @@ interface CookingViewProps {
     currentStep: number;
     setCurrentStep: (step: number) => void;
     cookingMode: boolean;
+    onClose: () => void;
 }
 
 export default function CookingView({
     recipe,
     currentStep,
     setCurrentStep,
-    cookingMode
+    cookingMode,
+    onClose
 }: CookingViewProps) {
     return (
         <AnimatePresence>
@@ -33,8 +35,15 @@ export default function CookingView({
                     {recipe ? (
                         <>
                             {/* Header */}
-                            <div className="mb-4 border-b border-white/10 pb-4 text-center shrink-0">
-                                <h2 className="text-xl md:text-2xl font-cinzel text-primary-glow truncate px-2">{recipe.title}</h2>
+                            <div className="mb-4 border-b border-white/10 pb-4 flex items-center justify-between shrink-0">
+                                <h2 className="text-xl md:text-2xl font-cinzel text-primary-glow truncate px-2 flex-1 text-center">{recipe.title}</h2>
+                                <button
+                                    onClick={onClose}
+                                    className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
+                                    title="Exit Cooking Mode"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
                             </div>
 
                             {/* Ingredients Section - Collapsible/Scrollable on Mobile */}
