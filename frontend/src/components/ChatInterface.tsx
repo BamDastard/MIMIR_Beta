@@ -56,7 +56,7 @@ export default function ChatInterface({
             {/* Chat Area */}
             <div className={cn_local(
                 "flex flex-col gap-8 transition-all duration-500",
-                cookingMode ? "w-full md:w-1/3 h-full min-h-0 overflow-y-auto scrollbar-hide p-4" : "w-full pb-24"
+                cookingMode ? "w-full md:w-1/3 h-full min-h-0 overflow-y-auto scrollbar-hide p-4" : "w-full pb-32"
             )}>
                 <AnimatePresence initial={false}>
                     {messages.map((msg) => (

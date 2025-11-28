@@ -90,10 +90,10 @@ export default function RightSidebar({
                     ) : (
                         <button
                             onClick={() => signIn("google")}
-                            className="w-full glass-panel p-3 rounded-lg flex items-center justify-center gap-2 hover:bg-white/5 transition-all group"
+                            className="w-full p-3 rounded-lg flex items-center justify-center gap-2 bg-primary/20 border border-primary/50 hover:bg-primary/30 hover:border-primary-glow transition-all group shadow-lg shadow-primary/10"
                         >
-                            <LogIn size={16} className="text-primary-glow" />
-                            <span className="text-sm font-medium text-white/90">Connect to Yggdrasil</span>
+                            <LogIn size={16} className="text-primary-glow group-hover:scale-110 transition-transform" />
+                            <span className="text-sm font-medium text-primary-glow">Connect to Yggdrasil</span>
                         </button>
                     )}
                 </div>

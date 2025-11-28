@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signOut, signIn } from "next-auth/react";
 import { cn } from '@/lib/utils';
 import { Menu, User } from 'lucide-react';
 import OnboardingModal from '@/components/OnboardingModal';
@@ -104,13 +104,15 @@ export default function Home() {
     scrollToBottom();
   }, [messages]);
 
-  // Scroll to bottom when toggling cooking mode
+  // Scroll to bottom when toggling cooking mode or closing calendar
   useEffect(() => {
-    scrollToBottom();
+    if (!calendarExpanded) {
+      scrollToBottom();
+    }
     if (cookingMode) {
       setConversationMode(true);
     }
-  }, [cookingMode]);
+  }, [cookingMode, calendarExpanded]);
 
   // Clear chat history when user changes
   useEffect(() => {
@@ -640,12 +642,22 @@ export default function Home() {
           </div>
 
           {/* Mobile Right Sidebar Toggle */}
-          <button
-            onClick={() => setShowRightSidebar(true)}
-            className="md:hidden p-2 text-white/80 hover:text-white"
-          >
-            <User size={24} />
-          </button>
+          <div className="flex items-center gap-3 md:hidden">
+            {!session && (
+              <button
+                onClick={() => signIn("google")}
+                className="text-xs bg-primary/20 text-primary-glow px-3 py-1.5 rounded-full border border-primary/30 animate-pulse"
+              >
+                Sign In
+              </button>
+            )}
+            <button
+              onClick={() => setShowRightSidebar(true)}
+              className="p-2 text-white/80 hover:text-white"
+            >
+              <User size={24} />
+            </button>
+          </div>
         </div>
       </header>
 
