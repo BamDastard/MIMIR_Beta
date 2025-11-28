@@ -63,7 +63,7 @@ class DailyJournalManager:
         logs.append(entry)
         
         with open(log_file, 'w') as f:
-            json.dump(logs, f, indent=2)
+            f.write(json.dumps(logs, indent=2))
 
     def check_prompt_needed(self, user_id: str) -> bool:
         """
