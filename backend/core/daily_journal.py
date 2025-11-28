@@ -114,7 +114,8 @@ class DailyJournalManager:
         if now.hour == 23 and now.minute >= 59:
             # Check if already generated
             # We check if the attachment file exists as a proxy for "journal generated"
-            attachment_filename = f"journal_data_{user_id}_{date_str}.txt"
+            safe_filename_id = "".join([c for c in user_id if c.isalnum()])
+            attachment_filename = f"journal_stats_{safe_filename_id}_{date_str}.csv"
             attachment_path = os.path.join(JOURNAL_ATTACHMENTS_DIR, attachment_filename)
             
             if not os.path.exists(attachment_path):
@@ -132,7 +133,8 @@ class DailyJournalManager:
         
         if os.path.exists(yesterday_log):
              # Check if journal exists for yesterday
-            attachment_filename = f"journal_data_{user_id}_{yesterday_str}.txt"
+            safe_filename_id = "".join([c for c in user_id if c.isalnum()])
+            attachment_filename = f"journal_stats_{safe_filename_id}_{yesterday_str}.csv"
             attachment_path = os.path.join(JOURNAL_ATTACHMENTS_DIR, attachment_filename)
             
             if not os.path.exists(attachment_path):
