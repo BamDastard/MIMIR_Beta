@@ -238,7 +238,10 @@ class DailyJournalManager:
             "recipe": recipe_used
         }
         
-        journal_dir = os.path.join(os.getcwd(), "journal_entries")
+        if MIMIR_DATA_DIR:
+            journal_dir = os.path.join(MIMIR_DATA_DIR, "journal_entries")
+        else:
+            journal_dir = os.path.join(os.getcwd(), "journal_entries")
         os.makedirs(journal_dir, exist_ok=True)
         journal_json_path = os.path.join(journal_dir, f"{user_id}_{date_str}.json")
         
