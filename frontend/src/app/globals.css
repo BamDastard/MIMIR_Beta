@@ -67,3 +67,17 @@ body {
 .mask-gradient-b {
   mask-image: linear-gradient(to bottom, transparent, black 5%, black 95%, transparent);
 }
+
+/* Safe Area Utilities */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right);
+}
