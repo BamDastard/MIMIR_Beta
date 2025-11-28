@@ -403,8 +403,12 @@ async def get_journal_entry(request: Request, date_str: str):
     """Get the journal entry for a specific date."""
     user_id = request.state.user_auth_id
     safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
-    journal_dir = os.path.join(os.getcwd(), "journal_entries")
-    journal_path = os.path.join(journal_dir, f"{safe_id}_{date_str}.json")
+    MIMIR_DATA_DIR = os.getenv("MIMIR_DATA_DIR")
+    if MIMIR_DATA_DIR:
+        journal_dir = os.path.join(MIMIR_DATA_DIR, "journal_entries")
+    else:
+        journal_dir = os.path.join(os.getcwd(), "journal_entries")
+    journal_path = os.path.join(journal_dir, f"{user_id}_{date_str}.json")
     
     if not os.path.exists(journal_path):
         return {"error": "Journal entry not found"}
