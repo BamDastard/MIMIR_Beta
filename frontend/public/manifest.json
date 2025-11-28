@@ -1,0 +1,16 @@
+{
+  "name": "MIMIR AI",
+  "short_name": "MIMIR",
+  "description": "Your AI Companion",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/mimir_logo_v3.png",
+      "sizes": "any",
+      "type": "image/png"
+    }
+  ]
+}

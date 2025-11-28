@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cinzel, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,15 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "MIMIR | The Wise",
   description: "Ancient Norse AI Assistant",
+  manifest: "/manifest.json",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 import { Providers } from "./providers";
