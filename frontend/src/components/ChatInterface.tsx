@@ -139,7 +139,7 @@ export default function ChatInterface({
 
             {/* Input Area */}
             <div className={cn_local(
-                "fixed bottom-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 z-20 w-full",
+                "fixed bottom-0 left-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 z-20 w-full pb-safe",
                 cookingMode ? "md:w-1/3" : ""
             )}>
                 <form
