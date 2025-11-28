@@ -43,7 +43,7 @@ class CalendarManager:
         return sorted(filtered, key=lambda x: (x['date'], x.get('start_time', '')))
     
     def create_event(self, subject: str, date: str, start_time: str = None, 
-                    end_time: str = None, details: str = None) -> Dict:
+                    end_time: str = None, details: str = None, attachment: str = None) -> Dict:
         """Create a new calendar event"""
         # Validate details length
         if details and len(details) > 75:
@@ -55,7 +55,8 @@ class CalendarManager:
             "date": date,
             "start_time": start_time,
             "end_time": end_time,
-            "details": details
+            "details": details,
+            "attachment": attachment
         }
         
         self.events.append(event)
@@ -75,6 +76,8 @@ class CalendarManager:
                     event['start_time'] = kwargs['start_time']
                 if 'end_time' in kwargs:
                     event['end_time'] = kwargs['end_time']
+                if 'attachment' in kwargs:
+                    event['attachment'] = kwargs['attachment']
                 if 'details' in kwargs:
                     details = kwargs['details']
                     if details and len(details) > 75:
