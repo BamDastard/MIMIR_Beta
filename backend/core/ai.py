@@ -71,8 +71,20 @@ class MimirAI:
             temperature=1.0,
             convert_system_message_to_human=True
         )
-        self.history = [SystemMessage(content=MIMIR_SYSTEM_INSTRUCTION)]
+        # Dictionary to store history per user: {user_id: [messages]}
+        self.user_histories = {}
         print("[MIMIR] Initialized with Gemini 2.5 Pro")
+
+    def get_history(self, user_id: str) -> list:
+        """Get or initialize history for a specific user"""
+        if user_id not in self.user_histories:
+            self.user_histories[user_id] = [SystemMessage(content=MIMIR_SYSTEM_INSTRUCTION)]
+        return self.user_histories[user_id]
+
+    def clear_history(self, user_id: str):
+        """Clear history for a specific user"""
+        if user_id in self.user_histories:
+            self.user_histories[user_id] = [SystemMessage(content=MIMIR_SYSTEM_INSTRUCTION)]
 
     def detect_tool_calls(self, text: str) -> list:
         """Check if response contains tool call markers and return all matches"""
@@ -254,6 +266,9 @@ class MimirAI:
         else:
             final_prompt = f"{text_prompt}{personality_modifier}"
         
+        # Get user-specific history
+        history = self.get_history(user_id)
+        
         if message_parts:
             text_part = {"type": "text", "text": final_prompt}
             content_list = [text_part] + message_parts
@@ -262,17 +277,17 @@ class MimirAI:
             # Store only the clean user input in history (without context bloat)
             clean_text_part = {"type": "text", "text": user_input}
             clean_content_list = [clean_text_part] + message_parts
-            self.history.append(HumanMessage(content=clean_content_list))
+            history.append(HumanMessage(content=clean_content_list))
         else:
             # Create a temporary message for this turn with context
             current_turn_message = HumanMessage(content=final_prompt)
             # Store only the clean user input in history
-            self.history.append(HumanMessage(content=user_input))
+            history.append(HumanMessage(content=user_input))
         
         # Create a temporary history for this generation call
         # We use the history up to now, but replace the last item (which we just added) 
         # with the context-enriched version for the LLM to see
-        generation_history = self.history[:-1] + [current_turn_message]
+        generation_history = history[:-1] + [current_turn_message]
         
         tools_used = []
         tool_results = []
@@ -327,7 +342,7 @@ class MimirAI:
                         tool_results.append({"tool": tool_call["tool"], "result": tool_result})
                     
                     # Add AI's tool request to history and generation_history
-                    self.history.append(AIMessage(content=response_text))
+                    history.append(AIMessage(content=response_text))
                     generation_history.append(AIMessage(content=response_text))
                     
                     # Construct tool result message
@@ -338,7 +353,7 @@ class MimirAI:
                     
                     tool_message += f"Continue processing. If another tool is needed, call it. Otherwise, provide your final response to the user.{personality_modifier}"
                     
-                    self.history.append(HumanMessage(content=tool_message))
+                    history.append(HumanMessage(content=tool_message))
                     generation_history.append(HumanMessage(content=tool_message))
                     
                     yield {"type": "status", "content": "Processing results..."}
@@ -350,7 +365,7 @@ class MimirAI:
                     iteration += 1
                 else:
                     # No tool call, return final response
-                    self.history.append(AIMessage(content=response_text))
+                    history.append(AIMessage(content=response_text))
                     yield {
                         "type": "response",
                         "text": response_text,
@@ -361,7 +376,7 @@ class MimirAI:
             
             # Max iterations reached
             print("[WARN] Max tool iterations reached")
-            self.history.append(AIMessage(content=response_text))
+            history.append(AIMessage(content=response_text))
             yield {
                 "type": "response",
                 "text": response_text,
