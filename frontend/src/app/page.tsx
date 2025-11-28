@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { cn } from '@/lib/utils';
 import { Menu, User } from 'lucide-react';
 import OnboardingModal from '@/components/OnboardingModal';
@@ -522,8 +522,12 @@ export default function Home() {
     return fetch(url, { ...options, headers });
   };
 
-  // Check Onboarding Status
+  // Check Onboarding Status & Session Errors
   useEffect(() => {
+    if ((session as any)?.error === "RefreshAccessTokenError") {
+      signOut(); // Force sign out if refresh failed
+    }
+
     if (status === 'authenticated' && session) {
       authenticatedFetch(`${API_BASE_URL}/user/me`)
         .then(async (res) => {
@@ -589,8 +593,6 @@ export default function Home() {
   // Mobile Sidebar State
   const [showLeftSidebar, setShowLeftSidebar] = useState(false);
   const [showRightSidebar, setShowRightSidebar] = useState(false);
-
-  // ... existing code ...
 
   return (
     <main className={cn(
