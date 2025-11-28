@@ -139,22 +139,22 @@ export default function ChatInterface({
 
             {/* Input Area */}
             <div className={cn_local(
-                "fixed bottom-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 z-20",
-                cookingMode ? "left-0 w-full md:w-1/3" : "left-0 right-0"
+                "fixed bottom-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 z-20 w-full",
+                cookingMode ? "md:w-1/3" : ""
             )}>
                 <form
                     onSubmit={handleSubmit}
                     className={cn_local(
-                        "relative flex items-center gap-4",
+                        "relative flex items-center gap-4 w-full",
                         cookingMode ? "max-w-full" : "max-w-3xl mx-auto"
                     )}
                 >
-                    <div className="flex-1 glass-panel rounded-full p-2 pl-4 flex items-center gap-2 shadow-lg shadow-primary/5 border-primary/20">
+                    <div className="flex-1 glass-panel rounded-full p-2 pl-4 flex items-center gap-2 shadow-lg shadow-primary/5 border-primary/20 w-full">
                         <button
                             type="button"
                             onClick={() => attachmentInputRef.current?.click()}
                             className={cn_local(
-                                "p-2 rounded-full transition-all duration-300",
+                                "p-2 rounded-full transition-all duration-300 shrink-0",
                                 attachedFiles.length > 0
                                     ? "bg-primary/20 text-primary-glow shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)] animate-pulse"
                                     : "hover:bg-white/10 text-white/60 hover:text-white"
@@ -166,7 +166,7 @@ export default function ChatInterface({
                         <button
                             type="button"
                             onClick={startCamera}
-                            className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors"
+                            className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors shrink-0"
                             title="Take Photo"
                         >
                             <Camera size={20} />
@@ -183,14 +183,14 @@ export default function ChatInterface({
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder={isListening ? "Listening..." : "Consult the oracle..."}
-                            className="flex-1 bg-transparent border-none outline-none text-white px-2 py-3 text-lg placeholder:text-white/20 font-light tracking-wide"
+                            className="flex-1 bg-transparent border-none outline-none text-white px-2 py-3 text-lg placeholder:text-white/20 font-light tracking-wide min-w-0"
                             disabled={isLoading}
                         />
                         <button
                             type="button"
                             onClick={() => setConversationMode(!conversationMode)}
                             className={cn_local(
-                                "p-3 rounded-full transition-all border border-white/5",
+                                "p-3 rounded-full transition-all border border-white/5 shrink-0",
                                 conversationMode ? "bg-primary/20 text-primary-glow animate-pulse" : "bg-white/5 hover:bg-white/10 text-white/90"
                             )}
                         >
@@ -199,7 +199,7 @@ export default function ChatInterface({
                         <button
                             type="submit"
                             disabled={isLoading || !input.trim()}
-                            className="p-3 bg-white/5 hover:bg-white/10 text-white/90 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-white/5"
+                            className="p-3 bg-white/5 hover:bg-white/10 text-white/90 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-white/5 shrink-0"
                         >
                             <Send size={20} />
                         </button>

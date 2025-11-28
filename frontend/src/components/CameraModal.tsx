@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Camera } from 'lucide-react';
+import { X, Camera, SwitchCamera } from 'lucide-react';
 
 interface CameraModalProps {
     isOpen: boolean;
@@ -12,17 +12,50 @@ interface CameraModalProps {
 export default function CameraModal({
     isOpen,
     onClose,
-    cameraStream,
+    cameraStream: initialStream,
     onCapture
 }: CameraModalProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [stream, setStream] = useState<MediaStream | null>(initialStream);
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+    const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
 
     useEffect(() => {
-        if (isOpen && videoRef.current && cameraStream) {
-            videoRef.current.srcObject = cameraStream;
+        setStream(initialStream);
+    }, [initialStream]);
+
+    useEffect(() => {
+        if (isOpen && videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
         }
-    }, [isOpen, cameraStream]);
+    }, [isOpen, stream]);
+
+    useEffect(() => {
+        // Check for multiple video inputs
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            setHasMultipleCameras(videoDevices.length > 1);
+        });
+    }, []);
+
+    const switchCamera = async () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+
+        const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+        setFacingMode(newFacingMode);
+
+        try {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: newFacingMode }
+            });
+            setStream(newStream);
+        } catch (err) {
+            console.error("Error switching camera:", err);
+        }
+    };
 
     const handleCapture = () => {
         if (videoRef.current && canvasRef.current) {
@@ -69,6 +102,15 @@ export default function CameraModal({
                                 className="w-full h-full object-cover"
                             />
                             <canvas ref={canvasRef} className="hidden" />
+
+                            {hasMultipleCameras && (
+                                <button
+                                    onClick={switchCamera}
+                                    className="absolute top-4 right-4 p-3 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors backdrop-blur-sm"
+                                >
+                                    <SwitchCamera size={24} />
+                                </button>
+                            )}
                         </div>
 
                         <div className="flex justify-center gap-4">
