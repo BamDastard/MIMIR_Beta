@@ -74,24 +74,24 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 ## Phase 2: Mobile & Responsive UI (6-8 weeks)
 
 ### Progressive Web App (PWA)
-- [ ] Convert Next.js app to installable PWA
-  - [ ] Service worker for offline assets
-  - [ ] Web app manifest
-  - [ ] Install prompt for mobile users
-- [ ] Touch-optimized UI components
-  - [ ] Larger tap targets
-  - [ ] Mobile-friendly input methods
-  - [ ] Swipe gestures for navigation
-- [ ] Responsive layout overhaul
-  - [ ] Single-column mobile layout
-  - [ ] Collapsible sidebars
-  - [ ] Bottom navigation bar for mobile
+- [x] Convert Next.js app to installable PWA
+  - [x] Service worker for offline assets
+  - [x] Web app manifest
+  - [x] Install prompt for mobile users
+- [x] Touch-optimized UI components
+  - [x] Larger tap targets
+  - [x] Mobile-friendly input methods
+  - [x] Swipe gestures for navigation
+- [x] Responsive layout overhaul
+  - [x] Single-column mobile layout
+  - [x] Collapsible sidebars
+  - [x] Bottom navigation bar for mobile
   
 ### Cooking Mode Mobile Redesign
-- [ ] Stack layout instead of side-by-side
-  - [ ] Swipeable ingredient cards
-  - [ ] Full-screen step view
-  - [ ] Floating action button for navigation
+- [x] Stack layout instead of side-by-side
+  - [x] Swipeable ingredient cards
+  - [x] Full-screen step view
+  - [x] Floating action button for navigation
 - [ ] Voice-first step advancement
   - [ ] "Next step" / "Previous step" voice commands
   - [ ] Hands-free mode with wake word (optional)
@@ -333,7 +333,7 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 
 ---
 
-**Last Updated**: November 26, 2024
+**Last Updated**: November 27, 2024
 **Document Owner**: Matt Burchett
 **Status**: Living Document - Update as priorities shift
 
