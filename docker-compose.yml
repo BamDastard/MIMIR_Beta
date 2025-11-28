@@ -8,6 +8,9 @@ services:
     environment:
       - PORT=8080
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - GOOGLE_SEARCH_API_KEY=${GOOGLE_SEARCH_API_KEY}
+      - GOOGLE_SEARCH_ENGINE_ID=${GOOGLE_SEARCH_ENGINE_ID}
     volumes:
       # Mount local data directories to mimic persistence
       # Note: In Cloud Run, we will use GCS FUSE, but for local docker, we use bind mounts
