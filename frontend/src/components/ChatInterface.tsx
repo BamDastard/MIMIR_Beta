@@ -1,26 +1,14 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, MicOff, Paperclip, Camera } from 'lucide-react';
+import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { cn } from '@/lib/utils'; // Assuming we'll move cn utility or define it here
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-
-function cn_local(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs))
-}
-
-interface Message {
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: number;
-}
+import { cn } from "@/lib/utils";
+import { Message } from '@/types';
 
 interface ChatInterfaceProps {
     messages: Message[];
     isLoading: boolean;
     thinkingStatus: string | null;
-    messagesEndRef: React.RefObject<HTMLDivElement | null>;
+    messagesEndRef: React.RefObject<HTMLDivElement>;
     cookingMode: boolean;
     input: string;
     setInput: (value: string) => void;
@@ -31,7 +19,9 @@ interface ChatInterfaceProps {
     attachedFiles: string[];
     onAttachmentSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     startCamera: () => void;
-    attachmentInputRef: React.RefObject<HTMLInputElement | null>;
+    attachmentInputRef: React.RefObject<HTMLInputElement>;
+    isMuted: boolean;
+    setIsMuted: (muted: boolean) => void;
 }
 
 export default function ChatInterface({
@@ -49,163 +39,150 @@ export default function ChatInterface({
     attachedFiles,
     onAttachmentSelect,
     startCamera,
-    attachmentInputRef
+    attachmentInputRef,
+    isMuted,
+    setIsMuted
 }: ChatInterfaceProps) {
     return (
-        <>
-            {/* Chat Area */}
-            <div className={cn_local(
-                "flex flex-col gap-8 transition-all duration-500",
-                cookingMode ? "w-full md:w-1/3 h-full min-h-0 overflow-y-auto scrollbar-hide p-4" : "w-full pb-32"
-            )}>
-                <AnimatePresence initial={false}>
-                    {messages.map((msg) => (
-                        <motion.div
-                            key={msg.timestamp}
-                            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{ duration: 0.5, ease: "easeOut" }}
-                            className={cn_local(
-                                "flex w-full",
-                                msg.role === 'user' ? "justify-end mr-4" : "justify-start"
-                            )}
-                        >
-                            <div
-                                className={cn_local(
-                                    "max-w-[85%] p-6 rounded-2xl backdrop-blur-md shadow-2xl border relative overflow-hidden",
-                                    msg.role === 'user'
-                                        ? "bg-primary/10 border-primary/30 text-white rounded-tr-sm"
-                                        : "bg-black/60 border-white/10 text-gray-100 rounded-tl-sm runic-border"
-                                )}
-                            >
-                                {/* Subtle inner glow for assistant */}
-                                {msg.role === 'assistant' && (
-                                    <div className="absolute inset-0 bg-gradient-to-br from-secondary/5 to-transparent pointer-events-none" />
-                                )}
+        <div className="flex flex-col h-full relative">
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                {messages.map((msg, idx) => (
+                    <div
+                        key={idx}
+                        className={cn(
+                            "flex flex-col max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-300",
+                            msg.role === 'user' ? "self-end items-end" : "self-start items-start"
+                        )}
+                    >
+                        <div className={cn(
+                            "px-6 py-3 rounded-2xl backdrop-blur-md shadow-lg border border-white/5",
+                            msg.role === 'user'
+                                ? "bg-primary/20 text-white rounded-tr-sm"
+                                : "bg-white/10 text-gray-100 rounded-tl-sm"
+                        )}>
+                            <div className="prose prose-invert prose-sm max-w-none">
+                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            </div>
+                        </div>
+                        <span className="text-xs text-white/30 mt-1 px-2">
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                    </div>
+                ))}
 
-                                <div className={cn_local(
-                                    "text-lg leading-relaxed relative z-10 markdown-content",
-                                    msg.role === 'assistant' && "font-display tracking-wide text-white/90"
-                                )}>
-                                    <ReactMarkdown
-                                        components={{
-                                            strong: ({ node, ...props }) => <span className="font-bold text-primary-glow" {...props} />,
-                                            em: ({ node, ...props }) => <span className="italic text-white/80" {...props} />,
-                                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                                            ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
-                                            ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                                            li: ({ node, ...props }) => <li className="ml-2" {...props} />,
-                                        }}
-                                    >
-                                        {msg.content.replace(/\[FILE: .*?\]/g, '').trim()}
-                                    </ReactMarkdown>
-                                    {(!msg.content.replace(/\[FILE: .*?\]/g, '').trim()) && (
-                                        <span className="italic text-white/50 block">Sent an attachment</span>
-                                    )}
-                                    {msg.content.match(/\[FILE: .*?\]/) && (
-                                        <div className="mt-2 flex items-center gap-2 text-xs text-primary-glow/70 bg-primary/10 px-2 py-1 rounded w-fit">
-                                            <Paperclip size={12} />
-                                            <span>Attachment included</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <span className="text-xs text-white/30 mt-3 block font-mono relative z-10">
-                                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                            </div>
-                        </motion.div>
-                    ))}
-                    {isLoading && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="flex justify-start w-full"
-                        >
-                            <div className="bg-black/40 border border-white/10 p-4 rounded-2xl rounded-tl-sm flex items-center gap-3 backdrop-blur-sm">
-                                <div className="flex gap-1">
-                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                </div>
-                                <span className="text-sm text-primary-glow font-mono animate-pulse">
-                                    {thinkingStatus || "Thinking..."}
-                                </span>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {/* Thinking Indicator */}
+                {thinkingStatus && (
+                    <div className="self-start flex items-center gap-3 px-4 py-2 bg-white/5 rounded-full border border-white/5 animate-pulse">
+                        <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <span className="text-sm text-primary-glow font-medium">{thinkingStatus}</span>
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}
-            <div className={cn_local(
-                "fixed bottom-0 left-0 p-4 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 z-20 w-full pb-safe",
-                cookingMode ? "md:w-1/3" : ""
+            <div className={cn(
+                "p-4 transition-all duration-300",
+                cookingMode ? "bg-black/40 backdrop-blur-md" : "bg-gradient-to-t from-black/80 via-black/40 to-transparent"
             )}>
-                <form
-                    onSubmit={handleSubmit}
-                    className={cn_local(
-                        "relative flex items-center gap-4 w-full",
-                        cookingMode ? "max-w-full" : "max-w-3xl mx-auto"
-                    )}
-                >
-                    <div className="flex-1 glass-panel rounded-full p-2 pl-4 flex items-center gap-2 shadow-lg shadow-primary/5 border-primary/20 w-full">
+                <form onSubmit={handleSubmit} className="relative max-w-4xl mx-auto flex gap-3 items-end">
+                    {/* Hidden File Input */}
+                    <input
+                        type="file"
+                        ref={attachmentInputRef}
+                        className="hidden"
+                        onChange={onAttachmentSelect}
+                    />
+
+                    {/* Attachment Button */}
+                    <button
+                        type="button"
+                        onClick={() => attachmentInputRef.current?.click()}
+                        className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/5 shrink-0"
+                        title="Attach File"
+                    >
+                        <Paperclip size={20} />
+                    </button>
+
+                    {/* Camera Button */}
+                    <button
+                        type="button"
+                        onClick={startCamera}
+                        className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/5 shrink-0"
+                        title="Use Camera"
+                    >
+                        <Camera size={20} />
+                    </button>
+
+                    {/* Input Field Container */}
+                    <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl flex items-center p-1.5 gap-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all backdrop-blur-sm">
+
+                        {/* Mute Toggle */}
                         <button
                             type="button"
-                            onClick={() => attachmentInputRef.current?.click()}
-                            className={cn_local(
-                                "p-2 rounded-full transition-all duration-300 shrink-0",
-                                attachedFiles.length > 0
-                                    ? "bg-primary/20 text-primary-glow shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)] animate-pulse"
-                                    : "hover:bg-white/10 text-white/60 hover:text-white"
+                            onClick={() => setIsMuted(!isMuted)}
+                            className={cn(
+                                "p-2 rounded-xl transition-all duration-300",
+                                isMuted
+                                    ? "text-red-400 bg-red-500/10 hover:bg-red-500/20"
+                                    : "text-white/40 hover:text-white hover:bg-white/10"
                             )}
-                            title={attachedFiles.length > 0 ? `${attachedFiles.length} file(s) attached` : "Attach File"}
+                            title={isMuted ? "Unmute Voice" : "Mute Voice"}
                         >
-                            <Paperclip size={20} />
+                            {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                         </button>
-                        <button
-                            type="button"
-                            onClick={startCamera}
-                            className="p-2 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors shrink-0"
-                            title="Take Photo"
-                        >
-                            <Camera size={20} />
-                        </button>
-                        <input
-                            type="file"
-                            ref={attachmentInputRef}
-                            onChange={onAttachmentSelect}
-                            className="hidden"
-                            accept=".doc,.docx,.txt,.csv,.pdf,.jpg,.jpeg,.png"
-                        />
+
                         <input
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder={isListening ? "Listening..." : "Consult the oracle..."}
-                            className="flex-1 bg-transparent border-none outline-none text-white px-2 py-3 text-lg placeholder:text-white/20 font-light tracking-wide min-w-0"
+                            className="flex-1 bg-transparent border-none outline-none text-white px-2 py-2 text-base placeholder:text-white/20 font-light tracking-wide min-w-0"
                             disabled={isLoading}
                         />
+
+                        {/* Voice Mode Toggle */}
                         <button
                             type="button"
                             onClick={() => setConversationMode(!conversationMode)}
-                            className={cn_local(
-                                "p-3 rounded-full transition-all border border-white/5 shrink-0",
-                                conversationMode ? "bg-primary/20 text-primary-glow animate-pulse" : "bg-white/5 hover:bg-white/10 text-white/90"
+                            className={cn(
+                                "p-2 rounded-xl transition-all border border-white/5 shrink-0",
+                                conversationMode
+                                    ? "bg-primary/20 text-primary-glow animate-pulse border-primary/30"
+                                    : "bg-white/5 hover:bg-white/10 text-white/60 hover:text-white"
                             )}
+                            title={conversationMode ? "Disable Voice Mode" : "Enable Voice Mode"}
                         >
-                            {conversationMode ? <Mic size={20} /> : <MicOff size={20} />}
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isLoading || !input.trim()}
-                            className="p-3 bg-white/5 hover:bg-white/10 text-white/90 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-white/5 shrink-0"
-                        >
-                            <Send size={20} />
+                            {conversationMode ? <Mic size={18} /> : <MicOff size={18} />}
                         </button>
                     </div>
+
+                    {/* Send Button */}
+                    <button
+                        type="submit"
+                        disabled={isLoading || !input.trim()}
+                        className="p-3 bg-primary hover:bg-primary/80 text-white rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20 shrink-0"
+                    >
+                        <Send size={20} />
+                    </button>
                 </form>
+
+                {/* Attached Files Preview */}
+                {attachedFiles.length > 0 && (
+                    <div className="max-w-4xl mx-auto mt-2 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                        {attachedFiles.map((file, i) => (
+                            <div key={i} className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 text-xs text-white/80 whitespace-nowrap">
+                                <span className="truncate max-w-[150px]">{file.split('/').pop()}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
-        </>
+        </div>
     );
 }

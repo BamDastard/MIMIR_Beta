@@ -2,30 +2,32 @@ import os
 import google.generativeai as genai
 from dotenv import load_dotenv
 import re
+import os
+import io
+import wave
+from google.cloud import texttospeech
+from google.api_core.client_options import ClientOptions
 
 load_dotenv()
 
-import io
-import wave
-
 class MimirVoice:
     def __init__(self):
-        try:
-            api_key = os.environ.get("GOOGLE_API_KEY")
-            if not api_key:
-                print("[MIMIR VOICE] Error: GOOGLE_API_KEY not found.")
-                self.client = None
-                return
-
-            genai.configure(api_key=api_key)
-            self.client = genai.GenerativeModel("gemini-2.5-flash-preview-tts")
-            print("[MIMIR VOICE] Initialized Gemini 2.5 Flash Preview TTS")
-        except Exception as e:
-            print(f"Failed to initialize Gemini TTS: {e}")
+        self.api_key = os.getenv("GOOGLE_API_KEY")
+        if not self.api_key:
+            print("WARNING: GOOGLE_API_KEY not found. Voice generation will fail.")
             self.client = None
+        else:
+            try:
+                # Initialize Google Cloud TTS Client with API Key
+                options = ClientOptions(api_key=self.api_key)
+                self.client = texttospeech.TextToSpeechClient(client_options=options)
+                print("Google Cloud TTS Client Initialized")
+            except Exception as e:
+                print(f"Failed to initialize Google Cloud TTS: {e}")
+                self.client = None
 
-    def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
-        """Wraps raw PCM data in a WAV container."""
+    def _pcm_to_wav(self, pcm_data, sample_rate=24000):
+        """Converts raw PCM data to WAV format."""
         with io.BytesIO() as wav_buffer:
             with wave.open(wav_buffer, 'wb') as wav_file:
                 wav_file.setnchannels(1)  # Mono
@@ -34,75 +36,93 @@ class MimirVoice:
                 wav_file.writeframes(pcm_data)
             return wav_buffer.getvalue()
 
-    def speak(self, text: str) -> bytes:
-        """
-        Converts text to speech using Gemini 2.5 TTS and returns the audio bytes (WAV).
-        """
-        if not self.client:
+    def combine_wavs(self, wav_bytes_list: list[bytes]) -> bytes:
+        """Combines multiple WAV byte objects into a single WAV."""
+        if not wav_bytes_list:
+            return b""
+            
+        try:
+            output_buffer = io.BytesIO()
+            # Read the first wav to get parameters
+            with wave.open(io.BytesIO(wav_bytes_list[0]), 'rb') as first_wav:
+                params = first_wav.getparams()
+                
+            with wave.open(output_buffer, 'wb') as output_wav:
+                output_wav.setparams(params)
+                
+                for wav_bytes in wav_bytes_list:
+                    with wave.open(io.BytesIO(wav_bytes), 'rb') as w:
+                        # Ensure parameters match (optional check, but assuming consistent generation)
+                        output_wav.writeframes(w.readframes(w.getnframes()))
+                        
+            return output_buffer.getvalue()
+        except Exception as e:
+            print(f"[MIMIR VOICE] Error combining WAVs: {e}")
             return b""
 
-        # Strip markdown characters for cleaner speech
-        # Remove bold/italic markers (* or _)
-        clean_text = re.sub(r'[\*_]{1,2}(.*?)[\*_]{1,2}', r'\1', text)
-        # Remove code blocks/inline code (backticks)
-        clean_text = re.sub(r'`(.*?)`', r'\1', clean_text)
-        # Remove headers (#)
-        clean_text = re.sub(r'#+\s', '', clean_text)
-        # Remove links [text](url) -> text
-        clean_text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', clean_text)
-
+    def speak(self, text: str) -> bytes:
+        """
+        Converts text to speech using Google Cloud TTS (WaveNet/Studio) and returns the audio bytes (WAV).
+        """
+        if not self.client:
+            print("Voice client not initialized.")
+            return b""
+            
         try:
-            # Construct the prompt for style control
-            # "Puck" is one of the voices, but we can control style with the prompt.
-            # We want a "deep, booming, god-like voice".
-            
-            # Note: The API might expect a specific structure. 
-            # Based on docs: "Say in an spooky whisper: '...'"
-            
-            prompt = f'Say in a powerful, resonant, booming voice with a commanding presence and a Norse accent. Speak at a normal, authoritative pace: "{clean_text}"'
-
-            response = self.client.generate_content(
-                prompt,
-                generation_config={
-                    "response_modalities": ["AUDIO"],
-                    "speech_config": {
-                        "voice_config": {
-                            "prebuilt_voice_config": {
-                                "voice_name": "Algieba"
-                            }
-                        }
-                    }
-                }
-            )
-            
-            # The response.parts[0].inline_data.data contains the audio bytes
-            if response.parts:
-                part = response.parts[0]
-                audio_data = part.inline_data.data
-                mime_type = part.inline_data.mime_type if hasattr(part.inline_data, 'mime_type') else "unknown"
-                
-                # Check if it's PCM and convert to WAV
-                if "pcm" in mime_type.lower() or "l16" in mime_type.lower():
-                    # Parse sample rate from mime type if possible, else default to 24000
-                    sample_rate = 24000
-                    if "rate=" in mime_type:
-                        try:
-                            sample_rate = int(mime_type.split("rate=")[1].split(";")[0])
-                        except:
-                            pass
-                    
-                    wav_data = self._pcm_to_wav(audio_data, sample_rate)
-                    print(f"[MIMIR VOICE] Converted PCM to WAV. Size: {len(wav_data)} | Rate: {sample_rate}")
-                    return wav_data
-                
-                print(f"[MIMIR VOICE] Generated audio bytes: {len(audio_data)} | Mime: {mime_type}")
-                return audio_data
-            else:
-                print("No audio content in response")
+            # Clean text
+            clean_text = text.replace("*", "").replace("#", "").strip()
+            if not clean_text:
                 return b""
 
+            # Construct SSML for deep, booming voice
+            # en-US-Studio-M is a high-quality male voice.
+            # Pitch -4st makes it deeper. Rate 0.95 makes it slightly slower and more authoritative.
+            ssml_text = f"""
+            <speak>
+                <prosody pitch="-9st" rate="0.95">
+                    {clean_text}
+                </prosody>
+            </speak>
+            """
+
+            input_text = texttospeech.SynthesisInput(ssml=ssml_text)
+
+            # Note: Studio voices might be more expensive/limited than WaveNet. 
+            # If Studio fails or is too slow, fallback to en-US-Wavenet-D.
+            voice = texttospeech.VoiceSelectionParams(
+                language_code="en-GB",
+                name="en-GB-Wavenet-D", 
+            )
+
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.LINEAR16, # Returns WAV (Linear PCM)
+                sample_rate_hertz=24000
+            )
+
+            response = self.client.synthesize_speech(
+                input=input_text, voice=voice, audio_config=audio_config
+            )
+
+            # The response.audio_content is already a WAV file (with header) if LINEAR16 is used?
+            # Actually LINEAR16 is raw PCM usually, but Google TTS API returns WAV header if requested?
+            # Wait, AudioEncoding.LINEAR16 returns "Uncompressed 16-bit signed little-endian samples (Linear PCM)."
+            # It does NOT include a WAV header.
+            # However, `synthesize_speech` returns `audio_content` which IS the audio data.
+            # If I want a WAV file, I should wrap it.
+            # BUT, usually Google TTS returns WAV if you ask for LINEAR16? 
+            # Let's check docs: "LINEAR16: Uncompressed 16-bit signed little-endian samples (Linear PCM)."
+            # So I need to add the WAV header using _pcm_to_wav.
+            
+            # Correction: If I use `audio_encoding=texttospeech.AudioEncoding.MP3`, it returns MP3.
+            # If I use `LINEAR16`, it returns raw bytes.
+            
+            # Actually, let's use MP3? No, the frontend expects WAV.
+            # Let's use LINEAR16 and wrap it.
+            
+            return self._pcm_to_wav(response.audio_content, sample_rate=24000)
+
         except Exception as e:
-            print(f"Error synthesizing speech with Gemini: {e}")
+            print(f"[MIMIR VOICE] Generation error: {e}")
             return b""
 
 mimir_voice = MimirVoice()

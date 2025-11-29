@@ -106,6 +106,7 @@ app.mount("/journal_attachments", StaticFiles(directory="journal_attachments"), 
 class ChatRequest(BaseModel):
     message: str
     personality_intensity: int = 75 # 0-100, default 75%
+    mute: bool = False # If true, skip audio generation
 
 class ChatResponse(BaseModel):
     text: str
@@ -200,24 +201,78 @@ async def chat(request: Request, body: ChatRequest):
                     daily_journal.mark_prompted(user_id)
                     context += "\\n\\n[SYSTEM NOTE: It is after 7:00 PM and the user has not recorded much today. Gently ask them how their day went and if they have anything to add to their daily log.]"
                 
-                # 3. Generate Response (Single Shot)
-                # We iterate the stream but only act on the final response
+                # 3. Generate Response (Parallel Audio)
+                # We iterate the stream, spawn audio tasks for sentences, and stitch them at the end.
+                
+                text_buffer = ""
+                pending_sentences = []
+                pending_length = 0
+                audio_tasks = []
+                import re
                 
                 async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
-                    if event["type"] == "response":
+                    if event["type"] == "response_chunk":
+                        chunk_text = event["text"]
+                        text_buffer += chunk_text
+                        
+                        # Only process audio if NOT muted
+                        if not body.mute:
+                            # Check for sentence boundaries
+                            sentences = re.split(r'(?<=[.!?])\s+', text_buffer)
+                            
+                            if len(sentences) > 1:
+                                text_buffer = sentences.pop() # Keep the last incomplete part
+                                
+                                for sentence in sentences:
+                                    if sentence.strip():
+                                        pending_sentences.append(sentence)
+                                        pending_length += len(sentence)
+                                        
+                                        # Batch condition: 2+ sentences or >150 chars
+                                        if len(pending_sentences) >= 2 or pending_length > 150:
+                                            batch_text = " ".join(pending_sentences)
+                                            # Spawn task immediately
+                                            task = asyncio.create_task(asyncio.to_thread(mimir_voice.speak, batch_text))
+                                            audio_tasks.append(task)
+                                            pending_sentences = []
+                                            pending_length = 0
+                                    
+                    elif event["type"] == "response":
                         response_text = event["text"]
                         tools_used = event["tools_used"]
                         tool_results = event["tool_results"]
                         
-                        # Generate audio for the full response
-                        if response_text.strip():
-                            audio_bytes = await asyncio.to_thread(mimir_voice.speak, response_text)
-                            if audio_bytes:
-                                audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                                yield json.dumps({
-                                    "type": "audio_chunk",
-                                    "audio_base64": audio_b64
-                                }) + "\n"
+                        # Only process audio if NOT muted
+                        if not body.mute:
+                            # Process remaining text buffer
+                            if text_buffer.strip():
+                                pending_sentences.append(text_buffer)
+                            
+                            # Flush any pending sentences
+                            if pending_sentences:
+                                batch_text = " ".join(pending_sentences)
+                                task = asyncio.create_task(asyncio.to_thread(mimir_voice.speak, batch_text))
+                                audio_tasks.append(task)
+                            
+                            # Wait for all audio tasks to complete
+                            audio_segments = []
+                            for task in audio_tasks:
+                                try:
+                                    wav_bytes = await task
+                                    if wav_bytes:
+                                        audio_segments.append(wav_bytes)
+                                except Exception as e:
+                                    print(f"Audio task failed: {e}")
+                            
+                            # Combine WAV segments
+                            if audio_segments:
+                                combined_wav = await asyncio.to_thread(mimir_voice.combine_wavs, audio_segments)
+                                if combined_wav:
+                                    audio_b64 = base64.b64encode(combined_wav).decode('utf-8')
+                                    yield json.dumps({
+                                        "type": "audio_chunk",
+                                        "audio_base64": audio_b64
+                                    }) + "\n"
                         
                         # Yield final response text
                         yield json.dumps(event) + "\n"

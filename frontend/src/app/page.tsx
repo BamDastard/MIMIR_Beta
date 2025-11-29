@@ -37,6 +37,7 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [isMuted, setIsMuted] = useState(false); // Mute state
 
   // Cooking Mode State
   const [cookingMode, setCookingMode] = useState(false);
@@ -242,7 +243,7 @@ export default function Home() {
         body: JSON.stringify({
           message: content,
           personality_intensity: personalityIntensity,
-          // user_id removed, handled by auth token
+          mute: isMuted
         }),
       });
 
@@ -761,6 +762,8 @@ export default function Home() {
                 onAttachmentSelect={handleAttachmentSelect}
                 startCamera={startCamera}
                 attachmentInputRef={attachmentInputRef}
+                isMuted={isMuted}
+                setIsMuted={setIsMuted}
               />
             </div>
 
