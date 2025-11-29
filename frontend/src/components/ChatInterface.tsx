@@ -8,7 +8,7 @@ interface ChatInterfaceProps {
     messages: Message[];
     isLoading: boolean;
     thinkingStatus: string | null;
-    messagesEndRef: React.RefObject<HTMLDivElement>;
+    messagesEndRef: React.RefObject<HTMLDivElement | null>;
     cookingMode: boolean;
     input: string;
     setInput: (value: string) => void;
@@ -19,7 +19,7 @@ interface ChatInterfaceProps {
     attachedFiles: string[];
     onAttachmentSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     startCamera: () => void;
-    attachmentInputRef: React.RefObject<HTMLInputElement>;
+    attachmentInputRef: React.RefObject<HTMLInputElement | null>;
     isMuted: boolean;
     setIsMuted: (muted: boolean) => void;
 }
