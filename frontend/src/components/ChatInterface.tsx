@@ -1,5 +1,6 @@
-import React from 'react';
-import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX } from 'lucide-react';
+import React, { useState } from 'react';
+import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX, Plus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from "@/lib/utils";
 import { Message } from '@/types';
@@ -43,6 +44,8 @@ export default function ChatInterface({
     isMuted,
     setIsMuted
 }: ChatInterfaceProps) {
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
+
     return (
         // Chat Interface Container
         <div className="flex flex-col h-full relative">
@@ -88,10 +91,10 @@ export default function ChatInterface({
 
             {/* Input Area */}
             <div className={cn(
-                "p-4 transition-all duration-300",
+                "p-2 md:p-4 transition-all duration-300",
                 cookingMode ? "bg-black/40 backdrop-blur-md" : "bg-gradient-to-t from-black/80 via-black/40 to-transparent"
             )}>
-                <form onSubmit={handleSubmit} className="relative max-w-4xl mx-auto flex gap-3 items-end">
+                <form onSubmit={handleSubmit} className="relative max-w-4xl mx-auto flex gap-2 md:gap-3 items-end w-full">
                     {/* Hidden File Input */}
                     <input
                         type="file"
@@ -100,28 +103,63 @@ export default function ChatInterface({
                         onChange={onAttachmentSelect}
                     />
 
-                    {/* Attachment Button */}
-                    <button
-                        type="button"
-                        onClick={() => attachmentInputRef.current?.click()}
-                        className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/5 shrink-0"
-                        title="Attach File"
-                    >
-                        <Paperclip size={20} />
-                    </button>
+                    {/* Combined Attachment Button */}
+                    <div className="relative shrink-0">
+                        <AnimatePresence>
+                            {showAttachMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                                    className="absolute bottom-full left-0 mb-2 flex flex-col gap-2 p-2 bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-xl min-w-[140px]"
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            attachmentInputRef.current?.click();
+                                            setShowAttachMenu(false);
+                                        }}
+                                        className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg text-sm text-white/80 hover:text-white transition-colors text-left"
+                                    >
+                                        <div className="p-1.5 bg-blue-500/20 rounded-lg text-blue-400">
+                                            <Paperclip size={16} />
+                                        </div>
+                                        <span>Upload File</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            startCamera();
+                                            setShowAttachMenu(false);
+                                        }}
+                                        className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg text-sm text-white/80 hover:text-white transition-colors text-left"
+                                    >
+                                        <div className="p-1.5 bg-purple-500/20 rounded-lg text-purple-400">
+                                            <Camera size={16} />
+                                        </div>
+                                        <span>Take Photo</span>
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
-                    {/* Camera Button */}
-                    <button
-                        type="button"
-                        onClick={startCamera}
-                        className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all border border-white/5 shrink-0"
-                        title="Use Camera"
-                    >
-                        <Camera size={20} />
-                    </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowAttachMenu(!showAttachMenu)}
+                            className={cn(
+                                "p-3 rounded-full transition-all border shrink-0",
+                                showAttachMenu
+                                    ? "bg-primary text-white border-primary rotate-45"
+                                    : "bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border-white/5"
+                            )}
+                            title="Add Attachment"
+                        >
+                            <Plus size={20} />
+                        </button>
+                    </div>
 
                     {/* Input Field Container */}
-                    <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl flex items-center p-1.5 gap-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all backdrop-blur-sm">
+                    <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl flex items-center p-1.5 gap-2 focus-within:ring-1 focus-within:ring-primary/50 transition-all backdrop-blur-sm min-w-0">
 
                         {/* Mute Toggle */}
                         <button
