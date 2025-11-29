@@ -44,6 +44,7 @@ export default function ChatInterface({
     setIsMuted
 }: ChatInterfaceProps) {
     return (
+        // Chat Interface Container
         <div className="flex flex-col h-full relative">
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
@@ -130,7 +131,7 @@ export default function ChatInterface({
                                 "p-2 rounded-xl transition-all duration-300",
                                 isMuted
                                     ? "text-red-400 bg-red-500/10 hover:bg-red-500/20"
-                                    : "text-white/40 hover:text-white hover:bg-white/10"
+                                    : "text-white/70 hover:text-white hover:bg-white/10"
                             )}
                             title={isMuted ? "Unmute Voice" : "Mute Voice"}
                         >
