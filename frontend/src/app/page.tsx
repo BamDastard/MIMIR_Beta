@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { useSession, signOut, signIn } from "next-auth/react";
-import { cn } from '@/lib/utils';
-import { Menu, User } from 'lucide-react';
-import OnboardingModal from '@/components/OnboardingModal';
-import JournalView from '@/components/JournalView';
+import React, { useState, useRef, useEffect } from 'react';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import { Send, Mic, MicOff, Paperclip, Camera, X, Menu, User, Calendar as CalendarIcon, BookOpen, ChevronLeft, ChevronRight, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { cn } from "@/lib/utils";
+
+// Components
 import LeftSidebar from '@/components/LeftSidebar';
 import RightSidebar from '@/components/RightSidebar';
 import ChatInterface from '@/components/ChatInterface';
@@ -13,88 +14,105 @@ import CookingView from '@/components/CookingView';
 import CalendarView from '@/components/CalendarView';
 import EventModal from '@/components/EventModal';
 import CameraModal from '@/components/CameraModal';
+import OnboardingModal from '@/components/OnboardingModal';
+import JournalView from '@/components/JournalView';
+
+// Types
+import { Message, Recipe, CalendarEvent } from '@/types';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
-type Message = {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-};
-
-type CalendarEvent = {
-  id: string;
-  subject: string;
-  date: string;
-  start_time?: string;
-  end_time?: string;
-  details?: string;
-  attachment?: string;
-};
-
-type Recipe = {
-  title: string;
-  ingredients: string[];
-  steps: string[];
-};
-
 export default function Home() {
   const { data: session, status } = useSession();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: 'I am MIMIR. The well of wisdom is open. Speak.',
-      timestamp: 0,
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [uploadStatus, setUploadStatus] = useState<string>('');
-  const [personalityIntensity, setPersonalityIntensity] = useState(75);
-
-  // Camera & Attachment State
-  const [showCameraModal, setShowCameraModal] = useState(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
-
-  // Journal State
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
-
-  // User Management State (New)
-  const [currentUser, setCurrentUser] = useState<string | null>(null); // Display Name
-  const [showOnboarding, setShowOnboarding] = useState(false);
-
-  // Conversation Mode State
-  const [conversationMode, setConversationMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const recognitionRef = useRef<any>(null);
-
-  // Calendar State
-  const [calendarExpanded, setCalendarExpanded] = useState(false);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [showEventModal, setShowEventModal] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [newEventSubject, setNewEventSubject] = useState('');
-  const [newEventDetails, setNewEventDetails] = useState('');
-  const [newEventTime, setNewEventTime] = useState('');
-  const [newEventEndTime, setNewEventEndTime] = useState('');
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [conversationMode, setConversationMode] = useState(false);
+  const [personalityIntensity, setPersonalityIntensity] = useState(75);
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Cooking Mode State
   const [cookingMode, setCookingMode] = useState(false);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
 
+  // Calendar State
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [newEventSubject, setNewEventSubject] = useState('');
+  const [newEventDetails, setNewEventDetails] = useState('');
+  const [newEventTime, setNewEventTime] = useState('');
+  const [newEventEndTime, setNewEventEndTime] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
+
+  // Camera State
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const silenceTimer = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef('');
+
+  // Audio Queue for Streaming TTS
+  const audioQueueRef = useRef<string[]>([]);
+  const isPlayingRef = useRef(false);
+  const isAudioEnabled = true; // Could be a state if we want to toggle audio
+
+  const playNextAudio = () => {
+    if (!isAudioEnabled || isPlayingRef.current || audioQueueRef.current.length === 0) return;
+
+    const nextAudioBase64 = audioQueueRef.current.shift();
+    if (!nextAudioBase64) return;
+
+    isPlayingRef.current = true;
+    setIsSpeaking(true);
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    const audio = new Audio(`data:audio/wav;base64,${nextAudioBase64}`);
+    audioRef.current = audio;
+
+    audio.onended = () => {
+      isPlayingRef.current = false;
+      // Small delay between sentences for natural flow
+      setTimeout(() => {
+        if (audioQueueRef.current.length === 0) {
+          setIsSpeaking(false);
+        }
+        playNextAudio();
+      }, 100);
+    };
+
+    audio.onerror = (e) => {
+      console.error("Audio playback failed:", e);
+      isPlayingRef.current = false;
+      playNextAudio();
+    };
+
+    audio.play().catch(e => {
+      console.error("Audio playback failed:", e);
+      isPlayingRef.current = false;
+      playNextAudio();
+    });
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -188,27 +206,20 @@ export default function Home() {
     }
   }, [conversationMode, isLoading, isSpeaking]);
 
-  const playAudio = (base64Audio: string) => {
-    if (!isAudioEnabled || !base64Audio) return;
+  const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+  // Authenticated Fetch Helper
+  const authenticatedFetch = async (url: string, options: any = {}) => {
+    const headers = {
+      ...options.headers,
+    };
+
+    if (session && (session as any).idToken) {
+      headers['Authorization'] = `Bearer ${(session as any).idToken}`;
     }
 
-    const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-    audioRef.current = audio;
-    setIsSpeaking(true);
-
-    audio.onended = () => setIsSpeaking(false);
-
-    audio.play().catch(e => {
-      console.error("Audio playback failed:", e);
-      setIsSpeaking(false);
-    });
+    return fetch(url, { ...options, headers });
   };
-
-  const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
@@ -258,18 +269,50 @@ export default function Home() {
 
             if (data.type === 'status') {
               setThinkingStatus(data.content);
+            } else if (data.type === 'response_chunk') {
+              setThinkingStatus(null);
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  // Append to existing assistant message
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...lastMsg, content: lastMsg.content + data.text }
+                  ];
+                } else {
+                  // Start new assistant message
+                  return [...prev, {
+                    role: 'assistant',
+                    content: data.text,
+                    timestamp: Date.now()
+                  }];
+                }
+              });
+            } else if (data.type === 'audio_chunk') {
+              if (data.audio_base64) {
+                audioQueueRef.current.push(data.audio_base64);
+                if (!isPlayingRef.current) {
+                  playNextAudio();
+                }
+              }
             } else if (data.type === 'response') {
               setThinkingStatus(null);
-              const botMessage: Message = {
-                role: 'assistant',
-                content: data.text,
-                timestamp: Date.now(),
-              };
-              setMessages(prev => [...prev, botMessage]);
-
-              if (data.audio_base64) {
-                playAudio(data.audio_base64);
-              }
+              // Final update to ensure consistency and handle tools
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                // If we were streaming, update the last message. If not (e.g. no tools used yet), add new.
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...lastMsg, content: data.text }
+                  ];
+                }
+                return [...prev, {
+                  role: 'assistant',
+                  content: data.text,
+                  timestamp: Date.now()
+                }];
+              });
 
               // Handle Tools
               if (data.tools_used && data.tool_results) {
@@ -507,21 +550,6 @@ export default function Home() {
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = '';
     }
-  };
-
-  // Authenticated Fetch Helper
-  const authenticatedFetch = async (url: string, options: any = {}) => {
-    // If no session (e.g. dev mode without auth), we might still want to try if backend is permissive
-    // But for now, let's assume we need token if session exists
-    const headers = {
-      ...options.headers,
-    };
-
-    if (session && (session as any).idToken) {
-      headers['Authorization'] = `Bearer ${(session as any).idToken}`;
-    }
-
-    return fetch(url, { ...options, headers });
   };
 
   // Check Onboarding Status & Session Errors

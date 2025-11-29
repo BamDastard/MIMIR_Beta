@@ -75,6 +75,7 @@ async def auth_middleware(request: Request, call_next):
         # Mock user for dev
         request.state.user_auth_id = "dev_user_123"
         request.state.user_email = "dev@example.com"
+        request.state.user_name = "Dev User"
         return await call_next(request)
 
     # Production Mode - Strict
@@ -193,47 +194,49 @@ async def chat(request: Request, body: ChatRequest):
                     context = time_context
     
                 # 2.5 Check for Daily Journal Triggers
-                # Check if we need to generate yesterday's journal
                 await daily_journal.check_end_of_day(user_id)
                 
-                # Check if we should prompt the user
                 if daily_journal.check_prompt_needed(user_id):
                     daily_journal.mark_prompted(user_id)
                     context += "\\n\\n[SYSTEM NOTE: It is after 7:00 PM and the user has not recorded much today. Gently ask them how their day went and if they have anything to add to their daily log.]"
                 
-                # 3. Generate Response Stream
+                # 3. Generate Response (Single Shot)
+                # We iterate the stream but only act on the final response
+                
                 async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
                     if event["type"] == "response":
                         response_text = event["text"]
                         tools_used = event["tools_used"]
                         tool_results = event["tool_results"]
                         
-                        # 3. Remember Interaction for specific user
+                        # Generate audio for the full response
+                        if response_text.strip():
+                            audio_bytes = await asyncio.to_thread(mimir_voice.speak, response_text)
+                            if audio_bytes:
+                                audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                yield json.dumps({
+                                    "type": "audio_chunk",
+                                    "audio_base64": audio_b64
+                                }) + "\n"
+                        
+                        # Yield final response text
+                        yield json.dumps(event) + "\n"
+                        
+                        # 3. Remember Interaction
                         mimir_memory.remember(f"User: {user_msg}\\nMIMIR: {response_text}", user_id=user_id)
                         daily_journal.log_interaction(user_id, "chat", f"MIMIR: {response_text}")
                         if tools_used:
                             daily_journal.log_interaction(user_id, "tool_use", {"tools": tools_used, "results": tool_results})
                         
-                        # 4. Generate Voice
-                        audio_bytes = mimir_voice.speak(response_text)
-                        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else None
-                        
-                        yield json.dumps({
-                            "type": "response",
-                            "text": response_text,
-                            "audio_base64": audio_b64,
-                            "tools_used": tools_used,
-                            "tool_results": tool_results
-                        }) + "\n"
-                    else:
-                        # Status update
-                        yield json.dumps(event) + "\n"
+                        # Break after final response
+                        break
+
             except Exception as e:
                 print(f"Error in event generator: {e}")
                 import traceback
                 traceback.print_exc()
-                yield json.dumps({"type": "error", "text": "The threads of fate are tangled. I cannot respond."}) + "\n"
-                    
+                yield json.dumps({"type": "error", "content": "An internal error occurred."}) + "\n"
+
         return StreamingResponse(event_generator(), media_type="application/x-ndjson")
     except Exception as e:
         print(f"Error in chat endpoint: {e}")

@@ -34,13 +34,15 @@ def _set_cache(key: str, value: any):
     _cache[key] = (value, datetime.now())
 
 
-def web_search(query: str, num_results: int = 5) -> Dict:
+import concurrent.futures
+
+def web_search(query: str, num_results: int = 3) -> Dict:
     """
     Search Google and digest top results.
     
     Args:
         query: Search query string
-        num_results: Number of results to return (max 10)
+        num_results: Number of results to return (max 5)
     
     Returns:
         {
@@ -65,58 +67,58 @@ def web_search(query: str, num_results: int = 5) -> Dict:
             "key": GOOGLE_SEARCH_API_KEY,
             "cx": GOOGLE_SEARCH_ENGINE_ID,
             "q": query,
-            "num": min(num_results, 10)
+            "num": min(num_results, 5)
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
         data = response.json()
         
         results = []
         
         if "items" in data:
-            for item in data["items"][:num_results]:
+            items = data["items"][:num_results]
+            
+            def process_item(item):
                 result = {
                     "title": item.get("title", ""),
                     "url": item.get("link", ""),
                     "snippet": item.get("snippet", "")
                 }
                 
-                # Try to fetch and summarize page content
+                # Try to fetch page content
                 try:
-                    page_response = requests.get(item["link"], timeout=5, headers={
+                    page_response = requests.get(item["link"], timeout=3, headers={
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     })
-                    page_response.raise_for_status()
                     
-                    # Parse HTML
-                    soup = BeautifulSoup(page_response.content, 'lxml')
-                    
-                    # Remove script and style elements
-                    for script in soup(["script", "style", "nav", "footer", "header"]):
-                        script.decompose()
-                    
-                    # Get text
-                    text = soup.get_text(separator=' ', strip=True)
-                    
-                    # Limit to first 3000 characters for summarization
-                    text = text[:3000]
-                    
-                    # Summarize with Gemini
-                    if text:
-                        model = genai.GenerativeModel('gemini-2.5-pro')
-                        summary_response = model.generate_content(
-                            f"Summarize the following web page content in 2-3 sentences, focusing on the main points:\n\n{text}"
-                        )
-                        result["content_summary"] = summary_response.text
+                    if page_response.status_code == 200:
+                        # Parse HTML
+                        soup = BeautifulSoup(page_response.content, 'lxml')
+                        
+                        # Remove script and style elements
+                        for script in soup(["script", "style", "nav", "footer", "header", "aside", "iframe"]):
+                            script.decompose()
+                        
+                        # Get text
+                        text = soup.get_text(separator=' ', strip=True)
+                        
+                        # Limit to first 1500 characters
+                        # We return raw text now instead of summarizing with LLM to save time
+                        # The main model will do the synthesis
+                        result["content_summary"] = text[:1500] + "..." if len(text) > 1500 else text
                     else:
                         result["content_summary"] = result["snippet"]
                         
                 except Exception as e:
-                    print(f"[TOOL] Could not fetch/summarize {item['link']}: {e}")
+                    # print(f"[TOOL] Could not fetch {item['link']}: {e}")
                     result["content_summary"] = result["snippet"]
                 
-                results.append(result)
+                return result
+
+            # Fetch pages in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(process_item, items))
         
         return {
             "query": query,

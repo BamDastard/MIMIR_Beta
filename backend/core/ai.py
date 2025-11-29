@@ -1,4 +1,5 @@
 import os
+import asyncio
 import traceback
 import configparser
 import re
@@ -334,12 +335,19 @@ class MimirAI:
                         status_msg = TOOL_DESCRIPTIONS.get(tool_call["tool"], f"Using tool: {tool_call['tool']}...")
                         yield {"type": "status", "content": status_msg}
                         
-                        # Execute tool (synchronously for now, but could be async wrapped)
-                        # To make it truly parallel we'd need async tool implementations or run_in_executor
-                        # For now, we just loop through them which is "parallel" from the AI's perspective (one turn)
-                        tool_result = self.execute_tool(tool_call, user_id=user_id)
-                        iteration_tool_results.append({"tool": tool_call["tool"], "result": tool_result})
-                        tool_results.append({"tool": tool_call["tool"], "result": tool_result})
+                        # Execute tool (async parallel)
+                        task = asyncio.to_thread(self.execute_tool, tool_call, user_id=user_id)
+                        iteration_tool_results.append({"tool": tool_call["tool"], "task": task})
+
+                    # Wait for all tools to complete
+                    tasks = [t["task"] for t in iteration_tool_results]
+                    results = await asyncio.gather(*tasks)
+                    
+                    # Map results back to tool calls
+                    for i, res in enumerate(results):
+                        tool_name = iteration_tool_results[i]["tool"]
+                        tool_results.append({"tool": tool_name, "result": res})
+                        iteration_tool_results[i]["result"] = res # Update with actual result
                     
                     # Add AI's tool request to history and generation_history
                     history.append(AIMessage(content=response_text))
@@ -358,14 +366,49 @@ class MimirAI:
                     
                     yield {"type": "status", "content": "Processing results..."}
                     print(f"[DEBUG] Sending tool results back to AI...")
-                    response = await self.llm.ainvoke(generation_history)
-                    response_text = response.content
+                    
+                    # Stream the final response after tool execution
+                    full_response = ""
+                    async for chunk in self.llm.astream(generation_history):
+                        content = chunk.content
+                        full_response += content
+                        yield {
+                            "type": "response_chunk",
+                            "text": content
+                        }
+                    
+                    response_text = full_response
                     print(f"[DEBUG] Received response: {response_text[:100]}...")
                     
                     iteration += 1
                 else:
-                    # No tool call, return final response
+                    # No tool call, return final response via stream
                     history.append(AIMessage(content=response_text))
+                    
+                    # Simulate streaming for the initial response since we already have it
+                    # This ensures main.py receives chunks to generate audio
+                    
+                    # Split by words to simulate chunks
+                    # We can use a regex to keep punctuation attached or just simple split
+                    # Simple split by space is enough for main.py to reassemble
+                    
+                    # Actually, let's just yield the whole thing in smaller chunks or even one big chunk
+                    # But main.py expects chunks to build buffer.
+                    
+                    # Let's split by spaces to be safe and allow sentence detection to work incrementally if we wanted
+                    # (though here it will happen fast)
+                    
+                    chunks = re.split(r'(\s+)', response_text) # Keep delimiters (spaces)
+                    
+                    for chunk in chunks:
+                        if chunk:
+                            yield {
+                                "type": "response_chunk",
+                                "text": chunk
+                            }
+                            # Small sleep to allow event loop to process? Not strictly necessary but might help
+                            # await asyncio.sleep(0.01) 
+                    
                     yield {
                         "type": "response",
                         "text": response_text,

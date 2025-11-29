@@ -1,39 +1,47 @@
 import os
-from google.cloud import texttospeech
+import google.generativeai as genai
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
-# Ensure GOOGLE_APPLICATION_CREDENTIALS is set in the environment for this to work
-# or explicitly pass credentials if available as a file path.
+import io
+import wave
 
 class MimirVoice:
     def __init__(self):
         try:
-            self.client = texttospeech.TextToSpeechClient()
-            self.voice_params = texttospeech.VoiceSelectionParams(
-                language_code="en-GB",
-                name="en-GB-Wavenet-D" # High-quality WaveNet with pitch support
-            )
-            self.audio_config = texttospeech.AudioConfig(
-                audio_encoding=texttospeech.AudioEncoding.MP3,
-                pitch=-10.0, # Deep voice: -10 semitones
-                speaking_rate=1.0 # Normal speed for clarity
-            )
-            print(f"[MIMIR VOICE] Initialized: {self.voice_params.name}, Pitch: {self.audio_config.pitch}")
+            api_key = os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                print("[MIMIR VOICE] Error: GOOGLE_API_KEY not found.")
+                self.client = None
+                return
+
+            genai.configure(api_key=api_key)
+            self.client = genai.GenerativeModel("gemini-2.5-flash-preview-tts")
+            print("[MIMIR VOICE] Initialized Gemini 2.5 Flash Preview TTS")
         except Exception as e:
-            print(f"Failed to initialize Google Cloud TTS: {e}")
+            print(f"Failed to initialize Gemini TTS: {e}")
             self.client = None
+
+    def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 24000) -> bytes:
+        """Wraps raw PCM data in a WAV container."""
+        with io.BytesIO() as wav_buffer:
+            with wave.open(wav_buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(pcm_data)
+            return wav_buffer.getvalue()
 
     def speak(self, text: str) -> bytes:
         """
-        Converts text to speech and returns the audio bytes (MP3).
+        Converts text to speech using Gemini 2.5 TTS and returns the audio bytes (WAV).
         """
         if not self.client:
             return b""
 
         # Strip markdown characters for cleaner speech
-        import re
         # Remove bold/italic markers (* or _)
         clean_text = re.sub(r'[\*_]{1,2}(.*?)[\*_]{1,2}', r'\1', text)
         # Remove code blocks/inline code (backticks)
@@ -43,18 +51,58 @@ class MimirVoice:
         # Remove links [text](url) -> text
         clean_text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', clean_text)
 
-        # Use plain text input (Studio voices don't support SSML pitch, but DO support AudioConfig pitch)
-        synthesis_input = texttospeech.SynthesisInput(text=clean_text)
-
         try:
-            response = self.client.synthesize_speech(
-                input=synthesis_input,
-                voice=self.voice_params,
-                audio_config=self.audio_config
+            # Construct the prompt for style control
+            # "Puck" is one of the voices, but we can control style with the prompt.
+            # We want a "deep, booming, god-like voice".
+            
+            # Note: The API might expect a specific structure. 
+            # Based on docs: "Say in an spooky whisper: '...'"
+            
+            prompt = f'Say in a powerful, resonant, booming voice with a commanding presence and a Norse accent. Speak at a normal, authoritative pace: "{clean_text}"'
+
+            response = self.client.generate_content(
+                prompt,
+                generation_config={
+                    "response_modalities": ["AUDIO"],
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": "Algieba"
+                            }
+                        }
+                    }
+                }
             )
-            return response.audio_content
+            
+            # The response.parts[0].inline_data.data contains the audio bytes
+            if response.parts:
+                part = response.parts[0]
+                audio_data = part.inline_data.data
+                mime_type = part.inline_data.mime_type if hasattr(part.inline_data, 'mime_type') else "unknown"
+                
+                # Check if it's PCM and convert to WAV
+                if "pcm" in mime_type.lower() or "l16" in mime_type.lower():
+                    # Parse sample rate from mime type if possible, else default to 24000
+                    sample_rate = 24000
+                    if "rate=" in mime_type:
+                        try:
+                            sample_rate = int(mime_type.split("rate=")[1].split(";")[0])
+                        except:
+                            pass
+                    
+                    wav_data = self._pcm_to_wav(audio_data, sample_rate)
+                    print(f"[MIMIR VOICE] Converted PCM to WAV. Size: {len(wav_data)} | Rate: {sample_rate}")
+                    return wav_data
+                
+                print(f"[MIMIR VOICE] Generated audio bytes: {len(audio_data)} | Mime: {mime_type}")
+                return audio_data
+            else:
+                print("No audio content in response")
+                return b""
+
         except Exception as e:
-            print(f"Error synthesizing speech: {e}")
+            print(f"Error synthesizing speech with Gemini: {e}")
             return b""
 
 mimir_voice = MimirVoice()

@@ -14,6 +14,8 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // @ts-ignore - turbopack is a valid config in Next 16 but types might lag
+  turbopack: {},
 };
 
 export default withPWA(nextConfig);
