@@ -156,7 +156,7 @@ export default function RightSidebar({
                 </button>
 
                 {/* News Feed */}
-                <NewsFeed apiBaseUrl={apiBaseUrl} fetcher={authenticatedFetch} />
+                <NewsFeed apiBaseUrl={apiBaseUrl} fetcher={authenticatedFetch} currentUser={currentUser} />
             </aside>
         </>
     );

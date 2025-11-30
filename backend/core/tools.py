@@ -487,3 +487,80 @@ def journal_read(date: str, user_id: str = "Matt Burchett") -> Dict:
     except Exception as e:
         print(f"[TOOL] Error reading journal: {e}")
         return {"error": f"Failed to read journal: {str(e)}"}
+
+
+def record_preference(preference: str, user_id: str = "Matt Burchett") -> Dict:
+    """
+    Record a user preference.
+    
+    Args:
+        preference: The preference to record (e.g., "Likes sci-fi movies", "Interested in AI news")
+        user_id: User ID
+    
+    Returns:
+        Status message
+    """
+    print(f"[TOOL] Recording preference for {user_id}: {preference}")
+    
+    # We need to access the user_manager instance. 
+    # Since tools.py is imported by ai.py which imports user_manager, we can import it here inside the function to avoid circular imports if necessary,
+    # or just import at top level if safe. Let's try inside for safety as tools.py is a core module.
+    try:
+        from backend.core.user_manager import user_manager
+        
+        # In this context, user_id passed from AI might be the display name or auth ID.
+        # The AI usually passes "Matt Burchett" (display name) or similar.
+        # But user_manager uses auth_id.
+        # We need to find the auth_id for the given display name or assume the caller handles it.
+        # HOWEVER, the `execute_tool` method in `ai.py` receives `user_id` which IS the auth_id (from request.state.user_auth_id).
+        # So we can trust `user_id` is the auth_id.
+        
+        success = user_manager.add_preference(user_id, preference)
+        if success:
+            return {"status": "success", "message": f"Preference recorded: {preference}"}
+        else:
+            return {"status": "error", "message": "User profile not found"}
+            
+    except Exception as e:
+        print(f"[TOOL ERROR] Failed to record preference: {e}")
+        return {"error": str(e)}
+
+
+def set_home_city(city: str, confirm: bool = False, user_id: str = "Matt Burchett") -> Dict:
+    """
+    Set the user's home city.
+    
+    Args:
+        city: The city name (e.g., "New York, NY")
+        confirm: Whether to overwrite an existing city
+        user_id: User ID
+    
+    Returns:
+        Status message
+    """
+    print(f"[TOOL] Setting home city for {user_id}: {city} (confirm={confirm})")
+    
+    try:
+        from backend.core.user_manager import user_manager
+        
+        # Check if city is already set
+        current_city = user_manager.get_home_city(user_id)
+        
+        if current_city and not confirm:
+            if current_city.lower() == city.lower():
+                return {"status": "success", "message": f"Home city is already set to {current_city}."}
+            
+            return {
+                "status": "requires_confirmation", 
+                "message": f"Home city is currently set to '{current_city}'. Please ask the user for explicit confirmation to change it to '{city}'. If they confirm, call this tool again with confirm=True."
+            }
+        
+        success = user_manager.set_home_city(user_id, city)
+        if success:
+            return {"status": "success", "message": f"Home city set to: {city}"}
+        else:
+            return {"status": "error", "message": "User profile not found"}
+            
+    except Exception as e:
+        print(f"[TOOL ERROR] Failed to set home city: {e}")
+        return {"error": str(e)}

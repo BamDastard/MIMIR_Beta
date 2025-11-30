@@ -144,6 +144,21 @@ export default function Home() {
         ]);
     }, [currentUser]);
 
+    // Handle session state changes
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            sessionStorage.removeItem("has_planned_day");
+            setCurrentUser(null);
+        }
+    }, [status]);
+
+    // Plan Day on Login
+    useEffect(() => {
+        if (currentUser && !sessionStorage.getItem("has_planned_day")) {
+            handlePlanDay();
+        }
+    }, [currentUser]);
+
     // Speech Recognition Initialization
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -222,6 +237,145 @@ export default function Home() {
         return fetch(url, { ...options, headers });
     };
 
+    const processStreamLine = async (line: string) => {
+        if (!line.trim()) return;
+        try {
+            const data = JSON.parse(line);
+
+            if (data.type === 'status') {
+                setThinkingStatus(data.content);
+            } else if (data.type === 'tool_call') {
+                setThinkingStatus(null);
+                setMessages(prev => [...prev, {
+                    role: 'assistant',
+                    content: data.tool,
+                    timestamp: Date.now(),
+                    type: 'tool'
+                }]);
+            } else if (data.type === 'response_chunk') {
+                setThinkingStatus(null);
+                setMessages(prev => {
+                    const lastMsg = prev[prev.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
+                        return [
+                            ...prev.slice(0, -1),
+                            { ...lastMsg, content: lastMsg.content + data.text }
+                        ];
+                    } else {
+                        return [...prev, {
+                            role: 'assistant',
+                            content: data.text,
+                            timestamp: Date.now(),
+                            type: 'text'
+                        }];
+                    }
+                });
+            } else if (data.type === 'audio_chunk') {
+                if (data.audio_base64) {
+                    audioQueueRef.current.push(data.audio_base64);
+                    if (!isPlayingRef.current) {
+                        playNextAudio();
+                    }
+                }
+            } else if (data.type === 'response') {
+                setThinkingStatus(null);
+                setMessages(prev => {
+                    const lastMsg = prev[prev.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
+                        return [
+                            ...prev.slice(0, -1),
+                            { ...lastMsg, content: data.text }
+                        ];
+                    }
+                    return [...prev, {
+                        role: 'assistant',
+                        content: data.text,
+                        timestamp: Date.now(),
+                        type: 'text'
+                    }];
+                });
+
+                if (data.tools_used && data.tool_results) {
+                    if (data.tools_used.includes('start_cooking')) {
+                        const cookingResult = data.tool_results.find((r: any) => r.tool === 'start_cooking');
+                        if (cookingResult?.result?.recipe) {
+                            setRecipe(cookingResult.result.recipe);
+                            setCookingMode(true);
+                            setCurrentStep(0);
+                        }
+                    }
+                    if (data.tools_used.includes('cooking_navigation')) {
+                        const navResult = data.tool_results.find((r: any) => r.tool === 'cooking_navigation');
+                        if (navResult?.result) {
+                            const action = navResult.result.action;
+                            if (action === 'next') setCurrentStep(prev => Math.min((recipe?.steps.length || 1) - 1, prev + 1));
+                            if (action === 'prev') setCurrentStep(prev => Math.max(0, prev - 1));
+                            if (action === 'goto' && navResult.result.step_index !== undefined) setCurrentStep(navResult.result.step_index);
+                        }
+                    }
+                    if (data.tools_used.some((tool: string) => ['calendar_create', 'calendar_update', 'calendar_delete'].includes(tool))) {
+                        await wait(100);
+                        await fetchEvents();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error parsing stream line:', line, e);
+        }
+    };
+
+    const handlePlanDay = async () => {
+        if (isLoading) return;
+
+        setIsLoading(true);
+        setThinkingStatus("Planning your day...");
+
+        try {
+            const response = await authenticatedFetch(`${API_BASE_URL}/chat/plan_day`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: "Plan my day",
+                    personality_intensity: personalityIntensity,
+                    mute: isMuted
+                }),
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch response');
+            if (!response.body) throw new Error('No response body');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            sessionStorage.setItem("has_planned_day", "true");
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    await processStreamLine(line);
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            setThinkingStatus(null);
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: 'I could not plan your day. The threads are tangled.',
+                timestamp: Date.now(),
+            }]);
+        } finally {
+            setIsLoading(false);
+            setThinkingStatus(null);
+        }
+    };
+
     const handleSendMessage = async (content: string) => {
         if (!content.trim() || isLoading) return;
 
@@ -263,101 +417,7 @@ export default function Home() {
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    if (!line.trim()) continue;
-                    try {
-                        console.log("Stream line:", line);
-                        const data = JSON.parse(line);
-
-                        if (data.type === 'status') {
-                            setThinkingStatus(data.content);
-                        } else if (data.type === 'tool_call') {
-                            setThinkingStatus(null);
-                            // Add a separate message for the tool call
-                            setMessages(prev => [...prev, {
-                                role: 'assistant',
-                                content: data.tool, // Store raw tool name for UI component to handle
-                                timestamp: Date.now(),
-                                type: 'tool'
-                            }]);
-                        } else if (data.type === 'response_chunk') {
-                            setThinkingStatus(null);
-                            setMessages(prev => {
-                                const lastMsg = prev[prev.length - 1];
-                                // Append to existing assistant message ONLY if it's NOT a tool message
-                                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
-                                    return [
-                                        ...prev.slice(0, -1),
-                                        { ...lastMsg, content: lastMsg.content + data.text }
-                                    ];
-                                } else {
-                                    // Start new assistant message
-                                    return [...prev, {
-                                        role: 'assistant',
-                                        content: data.text,
-                                        timestamp: Date.now(),
-                                        type: 'text'
-                                    }];
-                                }
-                            });
-                        } else if (data.type === 'audio_chunk') {
-                            if (data.audio_base64) {
-                                audioQueueRef.current.push(data.audio_base64);
-                                if (!isPlayingRef.current) {
-                                    playNextAudio();
-                                }
-                            }
-                        } else if (data.type === 'response') {
-                            setThinkingStatus(null);
-                            // Final update to ensure consistency and handle tools
-                            setMessages(prev => {
-                                const lastMsg = prev[prev.length - 1];
-                                // If we were streaming, update the last message.
-                                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
-                                    return [
-                                        ...prev.slice(0, -1),
-                                        { ...lastMsg, content: data.text }
-                                    ];
-                                }
-                                // If the last message was a tool, we append the final response as a new message
-                                return [...prev, {
-                                    role: 'assistant',
-                                    content: data.text,
-                                    timestamp: Date.now(),
-                                    type: 'text'
-                                }];
-                            });
-
-                            // Handle Tools
-                            if (data.tools_used && data.tool_results) {
-                                // Cooking
-                                if (data.tools_used.includes('start_cooking')) {
-                                    const cookingResult = data.tool_results.find((r: any) => r.tool === 'start_cooking');
-                                    if (cookingResult?.result?.recipe) {
-                                        setRecipe(cookingResult.result.recipe);
-                                        setCookingMode(true);
-                                        setCurrentStep(0);
-                                    }
-                                }
-                                // Navigation
-                                if (data.tools_used.includes('cooking_navigation')) {
-                                    const navResult = data.tool_results.find((r: any) => r.tool === 'cooking_navigation');
-                                    if (navResult?.result) {
-                                        const action = navResult.result.action;
-                                        if (action === 'next') setCurrentStep(prev => Math.min((recipe?.steps.length || 1) - 1, prev + 1));
-                                        if (action === 'prev') setCurrentStep(prev => Math.max(0, prev - 1));
-                                        if (action === 'goto' && navResult.result.step_index !== undefined) setCurrentStep(navResult.result.step_index);
-                                    }
-                                }
-                                // Calendar
-                                if (data.tools_used.some((tool: string) => ['calendar_create', 'calendar_update', 'calendar_delete'].includes(tool))) {
-                                    await wait(100);
-                                    await fetchEvents();
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error parsing stream line:', line, e);
-                    }
+                    await processStreamLine(line);
                 }
             }
 
@@ -392,12 +452,15 @@ export default function Home() {
 
     // Calendar Functions
     const fetchEvents = async () => {
+        if (!currentUser) return;
         try {
             const response = await authenticatedFetch(`${API_BASE_URL}/calendar/events?t=${Date.now()}`, { cache: 'no-store' });
-            const data = await response.json();
-            console.log('Fetched events:', data.events);
-            setEvents(data.events);
-            setLastUpdated(new Date());
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Fetched events:', data.events);
+                setEvents(data.events);
+                setLastUpdated(new Date());
+            }
         } catch (error) {
             console.error('Failed to fetch events:', error);
         }

@@ -321,6 +321,135 @@ async def chat(request: Request, body: ChatRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+from backend.core.planning import plan_day
+
+@app.post("/chat/plan_day")
+async def chat_plan_day(request: Request, body: ChatRequest):
+    try:
+        from datetime import datetime
+        auth_id = request.state.user_auth_id
+        profile = user_manager.get_profile(auth_id)
+        
+        if not profile:
+            raise HTTPException(status_code=403, detail="User not onboarded")
+            
+        user_id = auth_id
+        display_name = profile.display_name
+        
+        # 1. Generate Plan Data
+        plan_data = await plan_day(user_id)
+        user_msg = plan_data["system_prompt"]
+        personality = body.personality_intensity
+        
+        async def event_generator():
+            try:
+                # 2. Log Interaction
+                daily_journal.log_interaction(user_id, "action", "Started daily planning session")
+                
+                # 3. Generate Response (Reuse logic from /chat)
+                # We don't need memory recall for this specific system prompt, 
+                # but we might want to pass the summaries as context if we want to be cleaner.
+                # For now, the system prompt contains everything.
+                
+                context = f"Current Date and Time: {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}\\nUser Name: {display_name}"
+                
+                output_queue = asyncio.Queue()
+                audio_task_queue = asyncio.Queue()
+                
+                # ... Reuse audio/text processing logic ...
+                # Since the logic is identical to /chat, we should ideally refactor.
+                # But for now, I will duplicate the coordinator/processor logic to ensure it works without breaking /chat.
+                
+                async def generate_audio_task(text):
+                    try:
+                        return await asyncio.to_thread(mimir_voice.speak, text)
+                    except Exception as e:
+                        print(f"Audio generation failed: {e}")
+                        return None
+
+                async def audio_collector():
+                    while True:
+                        task = await audio_task_queue.get()
+                        if task is None: break
+                        try:
+                            wav_bytes = await task
+                            if wav_bytes:
+                                audio_b64 = base64.b64encode(wav_bytes).decode('utf-8')
+                                await output_queue.put(json.dumps({
+                                    "type": "audio_chunk",
+                                    "audio_base64": audio_b64
+                                }) + "\n")
+                        except Exception as e:
+                            print(f"Audio collection failed: {e}")
+
+                async def text_processor():
+                    try:
+                        text_buffer = ""
+                        import re
+
+                        # Pass the system prompt as user_input
+                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
+                            await output_queue.put(json.dumps(event) + "\n")
+
+                            if event["type"] == "response_chunk":
+                                chunk_text = event["text"]
+                                text_buffer += chunk_text
+                                if not body.mute:
+                                    parts = re.split(r'(?<=[.!?])\s+', text_buffer)
+                                    if len(parts) > 1:
+                                        text_buffer = parts.pop()
+                                        for part in parts:
+                                            clean_text = re.sub(r'\[TOOL:.*?\]', '', part, flags=re.DOTALL).strip()
+                                            if clean_text:
+                                                task = asyncio.create_task(generate_audio_task(clean_text))
+                                                await audio_task_queue.put(task)
+                            
+                            elif event["type"] == "tool_call":
+                                if not body.mute and text_buffer.strip():
+                                    clean_text = re.sub(r'\[TOOL:.*?\]', '', text_buffer, flags=re.DOTALL).strip()
+                                    if clean_text:
+                                        task = asyncio.create_task(generate_audio_task(clean_text))
+                                        await audio_task_queue.put(task)
+                                    text_buffer = ""
+
+                            elif event["type"] == "response":
+                                response_text = event["text"]
+                                if not body.mute and text_buffer.strip():
+                                    clean_text = re.sub(r'\[TOOL:.*?\]', '', text_buffer, flags=re.DOTALL).strip()
+                                    if clean_text:
+                                        task = asyncio.create_task(generate_audio_task(clean_text))
+                                        await audio_task_queue.put(task)
+                                    text_buffer = ""
+                                
+                                # Remember this interaction
+                                mimir_memory.remember(f"MIMIR (Daily Plan): {response_text}", user_id=user_id)
+
+                    except Exception as e:
+                        print(f"Error in text_processor: {e}")
+                        await output_queue.put(json.dumps({"type": "error", "content": "An internal error occurred."}) + "\n")
+                    finally:
+                        await audio_task_queue.put(None)
+
+                async def coordinator():
+                    await asyncio.gather(text_processor(), audio_collector())
+                    await output_queue.put(None)
+
+                asyncio.create_task(coordinator())
+
+                while True:
+                    item = await output_queue.get()
+                    if item is None: break
+                    yield item
+
+            except Exception as e:
+                print(f"Error in event generator: {e}")
+                yield json.dumps({"type": "error", "content": "An internal error occurred."}) + "\n"
+
+        return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+    except Exception as e:
+        print(f"Error in plan_day endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 def read_document_content(file_path: str, content: bytes = None) -> str:
     """Reads content from a file path or bytes"""
     try:
@@ -443,9 +572,33 @@ async def delete_calendar_event(request: Request, event_id: str):
     return {"success": success}
 
 @app.get("/news/top")
-async def get_top_news(refresh: bool = False):
-    """Get top 10 news headlines."""
-    return {"news": news_manager.get_top_news(force_refresh=refresh)}
+async def get_top_news(request: Request, refresh: bool = False):
+    """Get news headlines, personalized if user has preferences."""
+    try:
+        # Try to get user ID from request state (set by auth middleware)
+        # Note: This endpoint might be called without auth in some cases, so we handle that.
+        auth_id = getattr(request.state, "user_auth_id", None)
+        
+        query = None
+        if auth_id:
+            preferences = user_manager.get_preferences(auth_id)
+            if preferences:
+                import random
+                # Pick one random preference to keep the feed fresh and focused
+                query = random.choice(preferences)
+                print(f"[NEWS] Fetching news for preference: {query}")
+        
+        news_items = news_manager.get_news(query=query, force_refresh=refresh)
+        
+        # If preference search yielded no results, fallback to top news
+        if not news_items and query:
+             print(f"[NEWS] No results for '{query}', falling back to top news.")
+             news_items = news_manager.get_top_news(force_refresh=refresh)
+             
+        return {"news": news_items}
+    except Exception as e:
+        print(f"[NEWS] Error in get_top_news: {e}")
+        return {"news": news_manager.get_top_news(force_refresh=refresh)}
 
 @app.post("/news/log")
 async def log_news_access(request: Request, title: str = Form(...), url: str = Form(...)):

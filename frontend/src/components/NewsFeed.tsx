@@ -12,20 +12,24 @@ type NewsItem = {
 type NewsFeedProps = {
     apiBaseUrl: string;
     fetcher: (url: string, options?: any) => Promise<Response>;
+    currentUser: string | null;
 };
 
-export default function NewsFeed({ apiBaseUrl, fetcher }: NewsFeedProps) {
+export default function NewsFeed({ apiBaseUrl, fetcher, currentUser }: NewsFeedProps) {
     const [news, setNews] = useState<NewsItem[]>([]);
     const [startIndex, setStartIndex] = useState(0);
     const [loading, setLoading] = useState(false);
 
     const fetchNews = async (refresh = false) => {
+        if (!currentUser) return;
         setLoading(true);
         try {
             const res = await fetcher(`${apiBaseUrl}/news/top${refresh ? '?refresh=true' : ''}`);
-            const data = await res.json();
-            if (data.news) {
-                setNews(data.news);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.news) {
+                    setNews(data.news);
+                }
             }
         } catch (e) {
             console.error("Failed to fetch news:", e);
@@ -35,8 +39,10 @@ export default function NewsFeed({ apiBaseUrl, fetcher }: NewsFeedProps) {
     };
 
     useEffect(() => {
-        fetchNews();
-    }, []);
+        if (currentUser) {
+            fetchNews();
+        }
+    }, [currentUser]);
 
     // Rotate every minute
     useEffect(() => {

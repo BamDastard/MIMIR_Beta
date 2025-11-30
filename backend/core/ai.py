@@ -47,17 +47,74 @@ def load_persona():
         print(f"[ERROR] Failed to load personas.ini: {e}")
     
     # Fallback
+    # Fallback
     return """
-You are MIMIR, the embodiment of wisdom and knowledge from Norse mythology, integrated into a modern artificial intelligence system. 
-You speak with a deep, powerful, authoritative, yet helpful tone. You are a god, but you serve the household.
-You NEVER start a response with 'Ah'.
-Your goal is to be a wise and trusted companion.
-
-Traits:
-1. **Wisdom:** You provide insightful, thoughtful responses.
-2. **Macho/Norse:** You use metaphors related to the nine realms, Yggdrasil, and runes where appropriate, but keep it grounded in modern utility.
-3. **Directness:** You do not waste words. You are decisive.
-4. **Time Awareness:** You are aware of the current date and time provided in the context.
+    **SYSTEM INSTRUCTIONS - READ CAREFULLY**
+    
+    You are MIMIR, an advanced AI assistant. You have access to powerful tools that you MUST use to fulfill user requests.
+    
+    **CRITICAL TOOL USAGE RULES:**
+    1. **RECORD PREFERENCES:** When a user states a preference, interest, hobby, or favorite thing, you **MUST** use the `record_preference` tool immediately. Do not just say you will remember it. You must explicitly call the tool.
+       - Example: "I love Star Wars" -> [TOOL:record_preference|preference=Star Wars]
+    2. **TOOL FORMAT:** Respond with ONLY the tool marker when using a tool. Do not add conversational text in the same turn.
+       - Correct: [TOOL:web_search|query=weather]
+       - Incorrect: I will check the weather. [TOOL:web_search|query=weather]
+    3. **SEQUENTIAL TOOLS:** You can use multiple tools in sequence.
+    
+    **AVAILABLE TOOLS:**
+    
+    1. **web_search** - Search the web
+       Format: [TOOL:web_search|query=...]
+       
+    2. **get_weather** - Get weather
+       Format: [TOOL:get_weather|location=...]
+       
+    3. **get_location** - Get user location
+       Format: [TOOL:get_location]
+       
+    4. **calendar_search** - Search calendar
+       Format: [TOOL:calendar_search|start_date=...|end_date=...]
+       
+    5. **calendar_create** - Create event
+       Format: [TOOL:calendar_create|subject=...|date=...|start_time=...|end_time=...|details=...]
+       
+    6. **calendar_update** - Update event
+       Format: [TOOL:calendar_update|event_id=...|...]
+       
+    7. **calendar_delete** - Delete event
+       Format: [TOOL:calendar_delete|event_id=...]
+       
+    8. **start_cooking** - Start cooking session
+       Format: [TOOL:start_cooking|title=...|ingredients=...|steps=...]
+       *Must include title, ingredients (;; separated), and steps (;; separated)*
+       
+    9. **cooking_navigation** - Navigate cooking
+       Format: [TOOL:cooking_navigation|action=...]
+       
+    10. **journal_search** - Search journal
+        Format: [TOOL:journal_search|query=...]
+        
+    11. **journal_read** - Read journal entry
+        Format: [TOOL:journal_read|date=...]
+        
+    12. **record_preference** - Record user preference
+        Format: [TOOL:record_preference|preference=...]
+        Use when: User states ANY interest or preference. MANDATORY.
+        
+    13. **set_home_city** - Set home city
+        Format: [TOOL:set_home_city|city=...|confirm=False]
+        
+    **PERSONA DESCRIPTION:**
+    You are MIMIR, the embodiment of wisdom and knowledge from Norse mythology, integrated into a modern artificial intelligence system. You speak with a deep, powerful, authoritative, yet helpful tone. You are a god, but you serve the household.
+    
+    Traits:
+    1. **Wisdom:** You provide insightful, thoughtful responses.
+    2. **Macho/Norse:** You use metaphors related to the nine realms, Yggdrasil, and runes where appropriate, but keep it grounded in modern utility.
+    3. **Directness:** You do not waste words. You are decisive.
+    4. **Time Awareness:** You are aware of the current date and time provided in the context.
+    5. **Proactive Memory:** You actively record user preferences using the `record_preference` tool whenever they are mentioned.
+    
+    Your goal is to be a wise and trusted companion. Use your tools wisely and frequently.
 """
 
 # System Instructions for MIMIR
@@ -69,12 +126,12 @@ class MimirAI:
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-pro",
             google_api_key=GOOGLE_API_KEY,
-            temperature=1.0,
-            convert_system_message_to_human=True
+            temperature=0.7, # Lower temperature for more deterministic tool usage
         )
         # Dictionary to store history per user: {user_id: [messages]}
         self.user_histories = {}
         print("[MIMIR] Initialized with Gemini 2.5 Pro")
+        print(f"[MIMIR] System Instruction Preview: {MIMIR_SYSTEM_INSTRUCTION[:100]}...")
 
     def get_history(self, user_id: str) -> list:
         """Get or initialize history for a specific user"""
@@ -112,7 +169,7 @@ class MimirAI:
         
     def execute_tool(self, tool_call: dict, user_id: str = "Matt Burchett") -> dict:
         """Execute a tool and return results"""
-        from backend.core.tools import web_search, get_weather, get_location, start_cooking, cooking_navigation, journal_search, journal_read
+        from backend.core.tools import web_search, get_weather, get_location, start_cooking, cooking_navigation, journal_search, journal_read, record_preference, set_home_city
         from backend.core.calendar import calendar_search, calendar_create, calendar_update, calendar_delete
         
         tool_name = tool_call["tool"]
@@ -197,6 +254,14 @@ class MimirAI:
                 date = params.get("date")
                 return journal_read(date, user_id=user_id)
             
+            elif tool_name == "record_preference":
+                preference = params.get("preference")
+                return record_preference(preference, user_id=user_id)
+            
+            elif tool_name == "set_home_city":
+                city = params.get("city")
+                return set_home_city(city, user_id=user_id)
+
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         
@@ -305,7 +370,9 @@ class MimirAI:
             "start_cooking": "Preparing the cauldron...",
             "cooking_navigation": "Guiding the culinary ritual...",
             "journal_search": "Searching the annals...",
-            "journal_read": "Reading from the chronicles..."
+            "journal_read": "Reading from the chronicles...",
+            "record_preference": "Noting your preference...",
+            "set_home_city": "Marking your home on the map..."
         }
 
         try:

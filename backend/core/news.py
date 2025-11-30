@@ -5,19 +5,27 @@ import time
 
 class NewsManager:
     def __init__(self):
-        self.rss_url = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
-        self.cache = []
-        self.last_fetch = None
-        self.cache_duration = timedelta(minutes=10)
+        self.base_url = "https://news.google.com/rss"
+        self.cache = {} # Dict[str, Dict] -> {query: {'items': [], 'timestamp': datetime}}
+        self.cache_duration = timedelta(minutes=15)
 
-    def get_top_news(self, force_refresh=False):
+    def get_news(self, query=None, force_refresh=False):
         now = datetime.now()
+        cache_key = query if query else "TOP_NEWS"
         
-        if not force_refresh and self.last_fetch and (now - self.last_fetch) < self.cache_duration:
-            return self.cache
+        # Check cache
+        if not force_refresh and cache_key in self.cache:
+            cached_data = self.cache[cache_key]
+            if (now - cached_data['timestamp']) < self.cache_duration:
+                return cached_data['items']
 
         try:
-            response = requests.get(self.rss_url, timeout=10)
+            if query:
+                url = f"{self.base_url}/search?q={requests.utils.quote(query)}&hl=en-US&gl=US&ceid=US:en"
+            else:
+                url = f"{self.base_url}?hl=en-US&gl=US&ceid=US:en"
+
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
             
             root = ET.fromstring(response.content)
@@ -41,13 +49,21 @@ class NewsManager:
                     "source": source
                 })
             
-            self.cache = items
-            self.last_fetch = now
+            # Update cache
+            self.cache[cache_key] = {
+                'items': items,
+                'timestamp': now
+            }
             return items
             
         except Exception as e:
-            print(f"[NEWS] Error fetching news: {e}")
+            print(f"[NEWS] Error fetching news for '{cache_key}': {e}")
             # Return cache if available, even if expired
-            return self.cache
+            if cache_key in self.cache:
+                return self.cache[cache_key]['items']
+            return []
+
+    def get_top_news(self, force_refresh=False):
+        return self.get_news(query=None, force_refresh=force_refresh)
 
 news_manager = NewsManager()

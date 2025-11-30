@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX, Plus, Search, Cloud, Calendar, Utensils, Book, MapPin, Terminal } from 'lucide-react';
+import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX, Plus, Search, Cloud, Calendar, Utensils, Book, MapPin, Terminal, Heart, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from "@/lib/utils";
@@ -38,6 +38,8 @@ const getToolDisplay = (toolName: string) => {
         case 'cooking_navigation': return { icon: Utensils, label: 'Navigating recipe...' };
         case 'journal_search': return { icon: Book, label: 'Searching journal...' };
         case 'journal_read': return { icon: Book, label: 'Reading journal...' };
+        case 'record_preference': return { icon: Heart, label: 'Remembering preference...' };
+        case 'set_home_city': return { icon: Home, label: 'Setting home city...' };
         default: return { icon: Terminal, label: `Using tool: ${toolName}` };
     }
 };

@@ -4,6 +4,22 @@
     "email": "dev@example.com",
     "display_name": "Dev User",
     "timezone": null,
+    "preferences": [],
+    "home_city": null,
     "created_at": "2025-11-28T21:37:28.511726"
+  },
+  "105215666647012207766": {
+    "auth_id": "105215666647012207766",
+    "email": "burchett.matt@gmail.com",
+    "display_name": "Matthew Burchett",
+    "timezone": null,
+    "preferences": [
+      "likes the show Pluribus",
+      "likes the show Welcome to Derry",
+      "fan of Stephen King",
+      "working with AI models"
+    ],
+    "home_city": "North Port, FL",
+    "created_at": "2025-11-30T14:41:36.873600"
   }
 }
