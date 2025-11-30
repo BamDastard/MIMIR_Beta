@@ -313,14 +313,61 @@ class MimirAI:
             print(f"[DEBUG] Sending to Gemini API: {final_prompt[:50]}...")
             
             # Use ainvoke for async with the context-enriched history
-            response = await self.llm.ainvoke(generation_history)
-            response_text = response.content
-            print(f"[DEBUG] Received response: {response_text[:100]}...")
+            # REMOVED: Redundant ainvoke. We stream directly in the loop below.
+            # response = await self.llm.ainvoke(generation_history)
+            # response_text = response.content
+            # print(f"[DEBUG] Received response: {response_text[:100]}...")
             
             max_iterations = 5
             iteration = 0
             
+ 
+
+            # Track executed tools to prevent loops
+            executed_tools = []
+
             while iteration < max_iterations:
+                # We will stream and accumulate
+                full_response_text = ""
+                buffer = ""
+                potential_tool = ""
+                parsing_tool = False
+                
+                # We need to yield chunks, but HIDE tool calls.
+                
+                async for chunk in self.llm.astream(generation_history):
+                    content = chunk.content
+                    full_response_text += content
+                    
+                    for char in content:
+                        if parsing_tool:
+                            potential_tool += char
+                            if char == ']':
+                                # End of potential tool
+                                # Use DOTALL to match across newlines
+                                if re.match(r'\[TOOL:.*?\]', potential_tool, re.DOTALL):
+                                    # Valid tool! Do NOT yield as text.
+                                    pass
+                                else:
+                                    # Not a tool, yield what we held back
+                                    yield { "type": "response_chunk", "text": potential_tool }
+                                
+                                parsing_tool = False
+                                potential_tool = ""
+                        elif char == '[':
+                            parsing_tool = True
+                            potential_tool = char
+                        else:
+                            yield { "type": "response_chunk", "text": char }
+                
+                # If we have leftover potential_tool (incomplete?), yield it
+                if potential_tool:
+                     yield { "type": "response_chunk", "text": potential_tool }
+
+                # Stream finished. Now check full text for tools to execute.
+                response_text = full_response_text
+                print(f"[DEBUG] Full response: {response_text[:100]}...")
+
                 tool_matches = self.detect_tool_calls(response_text)
                 
                 if tool_matches:
@@ -329,15 +376,35 @@ class MimirAI:
                     
                     for match in tool_matches:
                         tool_call = self.parse_tool_call_match(match)
-                        print(f"[DEBUG] Tool call detected: {tool_call}")
-                        tools_used.append(tool_call["tool"])
                         
-                        status_msg = TOOL_DESCRIPTIONS.get(tool_call["tool"], f"Using tool: {tool_call['tool']}...")
-                        yield {"type": "status", "content": status_msg}
+                        # Loop Detection
+                        tool_signature = f"{tool_call['tool']}:{json.dumps(tool_call['params'], sort_keys=True)}"
+                        print(f"[DEBUG] Checking loop: {tool_signature} in {executed_tools}")
                         
-                        # Execute tool (async parallel)
-                        task = asyncio.to_thread(self.execute_tool, tool_call, user_id=user_id)
-                        iteration_tool_results.append({"tool": tool_call["tool"], "task": task})
+                        if tool_signature in executed_tools:
+                            print(f"[WARN] Loop detected! Skipping repeated tool call: {tool_signature}")
+                            iteration_tool_results.append({
+                                "tool": tool_call["tool"], 
+                                "task": asyncio.sleep(0, result={"error": "SYSTEM: Loop detected. You have already executed this tool with these parameters. Do not do it again. Provide your final response."})
+                            })
+                        else:
+                            print(f"[DEBUG] Tool call detected: {tool_call}")
+                            tools_used.append(tool_call["tool"])
+                            executed_tools.append(tool_signature)
+                            
+                            # Yield explicit tool call event for UI
+                            yield {
+                                "type": "tool_call",
+                                "tool": tool_call["tool"],
+                                "params": tool_call["params"]
+                            }
+                            
+                            status_msg = TOOL_DESCRIPTIONS.get(tool_call["tool"], f"Using tool: {tool_call['tool']}...")
+                            yield {"type": "status", "content": status_msg}
+                            
+                            # Execute tool (async parallel)
+                            task = asyncio.to_thread(self.execute_tool, tool_call, user_id=user_id)
+                            iteration_tool_results.append({"tool": tool_call["tool"], "task": task})
 
                     # Wait for all tools to complete
                     tasks = [t["task"] for t in iteration_tool_results]
@@ -367,47 +434,11 @@ class MimirAI:
                     yield {"type": "status", "content": "Processing results..."}
                     print(f"[DEBUG] Sending tool results back to AI...")
                     
-                    # Stream the final response after tool execution
-                    full_response = ""
-                    async for chunk in self.llm.astream(generation_history):
-                        content = chunk.content
-                        full_response += content
-                        yield {
-                            "type": "response_chunk",
-                            "text": content
-                        }
-                    
-                    response_text = full_response
-                    print(f"[DEBUG] Received response: {response_text[:100]}...")
-                    
                     iteration += 1
                 else:
-                    # No tool call, return final response via stream
+                    # No tool call, return final response
+                    # We already streamed it!
                     history.append(AIMessage(content=response_text))
-                    
-                    # Simulate streaming for the initial response since we already have it
-                    # This ensures main.py receives chunks to generate audio
-                    
-                    # Split by words to simulate chunks
-                    # We can use a regex to keep punctuation attached or just simple split
-                    # Simple split by space is enough for main.py to reassemble
-                    
-                    # Actually, let's just yield the whole thing in smaller chunks or even one big chunk
-                    # But main.py expects chunks to build buffer.
-                    
-                    # Let's split by spaces to be safe and allow sentence detection to work incrementally if we wanted
-                    # (though here it will happen fast)
-                    
-                    chunks = re.split(r'(\s+)', response_text) # Keep delimiters (spaces)
-                    
-                    for chunk in chunks:
-                        if chunk:
-                            yield {
-                                "type": "response_chunk",
-                                "text": chunk
-                            }
-                            # Small sleep to allow event loop to process? Not strictly necessary but might help
-                            # await asyncio.sleep(0.01) 
                     
                     yield {
                         "type": "response",

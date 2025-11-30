@@ -36,7 +36,7 @@ app = FastAPI(title="MIMIR API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], # Allow all for now to ensure connectivity
-    allow_origin_regex="https://.*\.run\.app", # Explicitly allow Cloud Run subdomains
+    allow_origin_regex=r"https://.*\.run\.app", # Explicitly allow Cloud Run subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -201,90 +201,112 @@ async def chat(request: Request, body: ChatRequest):
                     daily_journal.mark_prompted(user_id)
                     context += "\\n\\n[SYSTEM NOTE: It is after 7:00 PM and the user has not recorded much today. Gently ask them how their day went and if they have anything to add to their daily log.]"
                 
-                # 3. Generate Response (Parallel Audio)
-                # We iterate the stream, spawn audio tasks for sentences, and stitch them at the end.
+                # 3. Generate Response (Parallel Audio via Queue with Ordered Collection)
+                output_queue = asyncio.Queue()
+                audio_task_queue = asyncio.Queue()
                 
-                text_buffer = ""
-                pending_sentences = []
-                pending_length = 0
-                audio_tasks = []
-                import re
-                
-                async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
-                    if event["type"] == "response_chunk":
-                        chunk_text = event["text"]
-                        text_buffer += chunk_text
+                async def generate_audio_task(text):
+                    """Helper to generate audio (runs in background)"""
+                    try:
+                        return await asyncio.to_thread(mimir_voice.speak, text)
+                    except Exception as e:
+                        print(f"Audio generation failed: {e}")
+                        return None
+
+                async def audio_collector():
+                    """Consumes audio tasks in order and sends results to output"""
+                    while True:
+                        task = await audio_task_queue.get()
+                        if task is None:
+                            break
                         
-                        # Only process audio if NOT muted
-                        if not body.mute:
-                            # Check for sentence boundaries
-                            sentences = re.split(r'(?<=[.!?])\s+', text_buffer)
-                            
-                            if len(sentences) > 1:
-                                text_buffer = sentences.pop() # Keep the last incomplete part
+                        try:
+                            # Await the task to ensure order
+                            wav_bytes = await task
+                            if wav_bytes:
+                                audio_b64 = base64.b64encode(wav_bytes).decode('utf-8')
+                                await output_queue.put(json.dumps({
+                                    "type": "audio_chunk",
+                                    "audio_base64": audio_b64
+                                }) + "\n")
+                        except Exception as e:
+                            print(f"Audio collection failed: {e}")
+
+                async def text_processor():
+                    try:
+                        text_buffer = ""
+                        import re
+
+                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
+                            # Pass through all events to frontend immediately
+                            await output_queue.put(json.dumps(event) + "\n")
+
+                            if event["type"] == "response_chunk":
+                                chunk_text = event["text"]
+                                text_buffer += chunk_text
                                 
-                                for sentence in sentences:
-                                    if sentence.strip():
-                                        pending_sentences.append(sentence)
-                                        pending_length += len(sentence)
-                                        
-                                        # Batch condition: 2+ sentences or >150 chars
-                                        if len(pending_sentences) >= 2 or pending_length > 150:
-                                            batch_text = " ".join(pending_sentences)
-                                            # Spawn task immediately
-                                            task = asyncio.create_task(asyncio.to_thread(mimir_voice.speak, batch_text))
-                                            audio_tasks.append(task)
-                                            pending_sentences = []
-                                            pending_length = 0
-                                    
-                    elif event["type"] == "response":
-                        response_text = event["text"]
-                        tools_used = event["tools_used"]
-                        tool_results = event["tool_results"]
-                        
-                        # Only process audio if NOT muted
-                        if not body.mute:
-                            # Process remaining text buffer
-                            if text_buffer.strip():
-                                pending_sentences.append(text_buffer)
-                            
-                            # Flush any pending sentences
-                            if pending_sentences:
-                                batch_text = " ".join(pending_sentences)
-                                task = asyncio.create_task(asyncio.to_thread(mimir_voice.speak, batch_text))
-                                audio_tasks.append(task)
-                            
-                            # Wait for all audio tasks to complete
-                            audio_segments = []
-                            for task in audio_tasks:
-                                try:
-                                    wav_bytes = await task
-                                    if wav_bytes:
-                                        audio_segments.append(wav_bytes)
-                                except Exception as e:
-                                    print(f"Audio task failed: {e}")
-                            
-                            # Combine WAV segments
-                            if audio_segments:
-                                combined_wav = await asyncio.to_thread(mimir_voice.combine_wavs, audio_segments)
-                                if combined_wav:
-                                    audio_b64 = base64.b64encode(combined_wav).decode('utf-8')
-                                    yield json.dumps({
-                                        "type": "audio_chunk",
-                                        "audio_base64": audio_b64
-                                    }) + "\n"
-                        
-                        # Yield final response text
-                        yield json.dumps(event) + "\n"
-                        
-                        # 3. Remember Interaction
-                        mimir_memory.remember(f"User: {user_msg}\\nMIMIR: {response_text}", user_id=user_id)
-                        daily_journal.log_interaction(user_id, "chat", f"MIMIR: {response_text}")
-                        if tools_used:
-                            daily_journal.log_interaction(user_id, "tool_use", {"tools": tools_used, "results": tool_results})
-                        
-                        # Break after final response
+                                if not body.mute:
+                                    # Split by sentence endings (. ? ! followed by space or newline)
+                                    parts = re.split(r'(?<=[.!?])\s+', text_buffer)
+                                    if len(parts) > 1:
+                                        text_buffer = parts.pop() # Keep last part
+                                        for part in parts:
+                                            clean_text = re.sub(r'\[TOOL:.*?\]', '', part, flags=re.DOTALL).strip()
+                                            if clean_text:
+                                                # Create task and queue it to preserve order
+                                                task = asyncio.create_task(generate_audio_task(clean_text))
+                                                await audio_task_queue.put(task)
+                                            
+                            elif event["type"] == "tool_call":
+                                # Flush buffer on tool call
+                                if not body.mute and text_buffer.strip():
+                                    clean_text = re.sub(r'\[TOOL:.*?\]', '', text_buffer, flags=re.DOTALL).strip()
+                                    if clean_text:
+                                        task = asyncio.create_task(generate_audio_task(clean_text))
+                                        await audio_task_queue.put(task)
+                                    text_buffer = ""
+
+                            elif event["type"] == "response":
+                                response_text = event["text"]
+                                tools_used = event["tools_used"]
+                                tool_results = event["tool_results"]
+                                
+                                # Flush remaining buffer
+                                if not body.mute and text_buffer.strip():
+                                    clean_text = re.sub(r'\[TOOL:.*?\]', '', text_buffer, flags=re.DOTALL).strip()
+                                    if clean_text:
+                                        task = asyncio.create_task(generate_audio_task(clean_text))
+                                        await audio_task_queue.put(task)
+                                    text_buffer = ""
+                                
+                                # 3. Remember Interaction
+                                mimir_memory.remember(f"User: {user_msg}\\nMIMIR: {response_text}", user_id=user_id)
+                                daily_journal.log_interaction(user_id, "chat", f"MIMIR: {response_text}")
+                                if tools_used:
+                                    daily_journal.log_interaction(user_id, "tool_use", {"tools": tools_used, "results": tool_results})
+
+                    except Exception as e:
+                        print(f"Error in text_processor: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        await output_queue.put(json.dumps({"type": "error", "content": "An internal error occurred."}) + "\n")
+                    finally:
+                        # Signal end of audio tasks
+                        await audio_task_queue.put(None)
+
+                # Run processor and collector concurrently
+                async def coordinator():
+                    await asyncio.gather(text_processor(), audio_collector())
+                    await output_queue.put(None) # Signal end of stream
+
+                asyncio.create_task(coordinator())
+
+                # Consumer loop
+                while True:
+                    item = await output_queue.get()
+                    if item is None:
                         break
+                    yield item
 
             except Exception as e:
                 print(f"Error in event generator: {e}")

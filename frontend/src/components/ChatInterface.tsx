@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX, Plus } from 'lucide-react';
+import { Send, Mic, MicOff, Paperclip, Camera, Volume2, VolumeX, Plus, Search, Cloud, Calendar, Utensils, Book, MapPin, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from "@/lib/utils";
@@ -24,6 +24,23 @@ interface ChatInterfaceProps {
     isMuted: boolean;
     setIsMuted: (muted: boolean) => void;
 }
+
+const getToolDisplay = (toolName: string) => {
+    switch (toolName) {
+        case 'web_search': return { icon: Search, label: 'Searching the web...' };
+        case 'get_weather': return { icon: Cloud, label: 'Checking weather...' };
+        case 'get_location': return { icon: MapPin, label: 'Locating...' };
+        case 'calendar_search': return { icon: Calendar, label: 'Checking calendar...' };
+        case 'calendar_create': return { icon: Calendar, label: 'Scheduling event...' };
+        case 'calendar_update': return { icon: Calendar, label: 'Updating calendar...' };
+        case 'calendar_delete': return { icon: Calendar, label: 'Removing event...' };
+        case 'start_cooking': return { icon: Utensils, label: 'Starting cooking mode...' };
+        case 'cooking_navigation': return { icon: Utensils, label: 'Navigating recipe...' };
+        case 'journal_search': return { icon: Book, label: 'Searching journal...' };
+        case 'journal_read': return { icon: Book, label: 'Reading journal...' };
+        default: return { icon: Terminal, label: `Using tool: ${toolName}` };
+    }
+};
 
 export default function ChatInterface({
     messages,
@@ -51,29 +68,44 @@ export default function ChatInterface({
         <div className="flex flex-col h-full relative">
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        className={cn(
-                            "flex flex-col max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-300",
-                            msg.role === 'user' ? "self-end items-end" : "self-start items-start"
-                        )}
-                    >
-                        <div className={cn(
-                            "px-6 py-3 rounded-2xl backdrop-blur-md shadow-lg border border-white/5",
-                            msg.role === 'user'
-                                ? "bg-primary/20 text-white rounded-tr-sm"
-                                : "bg-white/10 text-gray-100 rounded-tl-sm"
-                        )}>
-                            <div className="prose prose-invert prose-sm max-w-none">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                {messages.map((msg, idx) => {
+                    const isTool = msg.type === 'tool';
+                    const toolDisplay = isTool ? getToolDisplay(msg.content) : null;
+                    const ToolIcon = toolDisplay?.icon;
+
+                    return (
+                        <div
+                            key={idx}
+                            className={cn(
+                                "flex flex-col max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-300",
+                                msg.role === 'user' ? "self-end items-end" : "self-start items-start"
+                            )}
+                        >
+                            <div className={cn(
+                                "px-6 py-3 rounded-2xl backdrop-blur-md shadow-lg border border-white/5",
+                                msg.role === 'user'
+                                    ? "bg-primary/20 text-white rounded-tr-sm"
+                                    : isTool
+                                        ? "bg-white/5 text-gray-300 text-sm border-dashed border-white/10 flex items-center gap-2"
+                                        : "bg-white/10 text-gray-100 rounded-tl-sm"
+                            )}>
+                                {isTool && ToolIcon ? (
+                                    <>
+                                        <ToolIcon size={14} className="text-primary-glow" />
+                                        <span className="italic">{toolDisplay.label}</span>
+                                    </>
+                                ) : (
+                                    <div className="prose prose-invert prose-sm max-w-none">
+                                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                    </div>
+                                )}
                             </div>
+                            <span className="text-xs text-white/30 mt-1 px-2">
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                         </div>
-                        <span className="text-xs text-white/30 mt-1 px-2">
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                    </div>
-                ))}
+                    );
+                })}
 
                 {/* Thinking Indicator */}
                 {thinkingStatus && (

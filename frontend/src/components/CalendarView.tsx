@@ -36,35 +36,40 @@ export default function CalendarView({
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass-panel p-6 rounded-2xl w-full h-[calc(100vh-8rem)] flex flex-col"
+            className="glass-panel p-4 rounded-2xl w-full h-full min-h-0 flex flex-col"
         >
-            <div className="flex flex-col md:flex-row items-center justify-between mb-4 md:mb-6 gap-4 shrink-0">
-                <div className="flex items-center justify-between w-full md:w-auto gap-4">
+            <div className="flex items-center justify-between mb-2 shrink-0 relative">
+                {/* Left: Close Button */}
+                <button
+                    onClick={() => setCalendarExpanded(false)}
+                    className="p-2 hover:bg-white/5 rounded-full transition-colors absolute left-0"
+                >
+                    <X className="w-5 h-5" />
+                </button>
+
+                {/* Center: Navigation & Title */}
+                <div className="flex items-center justify-center gap-4 w-full">
                     <button
-                        onClick={() => setCalendarExpanded(false)}
-                        className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                        onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+                        className="p-1 hover:bg-white/5 rounded-full"
                     >
-                        <X className="w-5 h-5" />
+                        <ChevronLeft className="w-5 h-5" />
                     </button>
-                    <h2 className="text-xl md:text-2xl font-cinzel text-primary-glow">
+
+                    <h2 className="text-lg md:text-xl font-cinzel text-primary-glow">
                         {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                     </h2>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
-                            className="p-1 hover:bg-white/5 rounded-full"
-                        >
-                            <ChevronLeft className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
-                            className="p-1 hover:bg-white/5 rounded-full"
-                        >
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
-                    </div>
+
+                    <button
+                        onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+                        className="p-1 hover:bg-white/5 rounded-full"
+                    >
+                        <ChevronRight className="w-5 h-5" />
+                    </button>
                 </div>
-                <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto justify-end">
+
+                {/* Right: Refresh & Last Updated */}
+                <div className="flex items-center gap-2 absolute right-0">
                     {lastUpdated && (
                         <span className="text-[10px] md:text-xs text-foreground/40 font-mono hidden md:inline">
                             Updated: {lastUpdated.toLocaleTimeString()}
@@ -77,27 +82,26 @@ export default function CalendarView({
                     >
                         <RefreshCw className="w-4 h-4" />
                     </button>
-                    <button
-                        onClick={() => openCreateModal(new Date())}
-                        className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-primary/20 hover:bg-primary/30 rounded-lg transition-colors text-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        <span>Add Event</span>
-                    </button>
                 </div>
             </div>
 
-            {/* Calendar Grid */}
-            <div className="flex-1 grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 overflow-y-auto min-h-0">
+            {/* Day Headers */}
+            <div className="grid grid-cols-7 gap-px mb-1 shrink-0">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} className="bg-black/40 p-2 text-center text-xs md:text-sm font-medium text-foreground/60">
+                    <div key={day} className="text-center text-[10px] md:text-xs font-medium text-foreground/40 uppercase tracking-wider py-1">
                         {day}
                     </div>
                 ))}
-                {Array.from({ length: 35 }).map((_, i) => {
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="flex-1 grid grid-cols-7 grid-rows-6 gap-px bg-white/5 rounded-lg overflow-hidden border border-white/10 min-h-0">
+                {Array.from({ length: 42 }).map((_, i) => {
                     const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
                     const startDay = date.getDay();
                     const dayNum = i - startDay + 1;
+                    const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
+
                     const currentDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), dayNum);
                     // Adjust for timezone offset
                     const offset = currentDate.getTimezoneOffset();
@@ -110,14 +114,14 @@ export default function CalendarView({
                     return (
                         <div
                             key={i}
-                            onClick={() => isCurrentMonth && openCreateModal(currentDate)}
+                            onClick={() => isCurrentMonth && dayNum > 0 && dayNum <= daysInMonth && openCreateModal(currentDate)}
                             className={cn_local(
-                                "bg-black/20 p-1 md:p-2 min-h-[60px] md:min-h-[100px] transition-colors relative group flex flex-col",
-                                isCurrentMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
+                                "bg-black/20 p-1 md:p-2 transition-colors relative group flex flex-col min-h-0",
+                                isCurrentMonth && dayNum > 0 && dayNum <= daysInMonth ? "hover:bg-white/5 cursor-pointer" : "opacity-30 pointer-events-none",
                                 currentDate.toDateString() === new Date().toDateString() && "bg-red-900/20 border border-red-500/30"
                             )}
                         >
-                            {dayNum > 0 && dayNum <= 31 && (
+                            {dayNum > 0 && dayNum <= daysInMonth && (
                                 <>
                                     <span className={cn_local(
                                         "text-xs md:text-sm font-medium mb-1",

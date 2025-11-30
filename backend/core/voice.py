@@ -50,10 +50,16 @@ class MimirVoice:
             with wave.open(output_buffer, 'wb') as output_wav:
                 output_wav.setparams(params)
                 
-                for wav_bytes in wav_bytes_list:
-                    with wave.open(io.BytesIO(wav_bytes), 'rb') as w:
-                        # Ensure parameters match (optional check, but assuming consistent generation)
-                        output_wav.writeframes(w.readframes(w.getnframes()))
+                for i, wav_bytes in enumerate(wav_bytes_list):
+                    try:
+                        with wave.open(io.BytesIO(wav_bytes), 'rb') as w:
+                            # Verify parameters match
+                            if w.getparams()[:3] != params[:3]: # Check channels, width, rate
+                                print(f"[WARN] WAV parameter mismatch in segment {i}")
+                                continue
+                            output_wav.writeframes(w.readframes(w.getnframes()))
+                    except Exception as e:
+                        print(f"[WARN] Failed to process WAV segment {i}: {e}")
                         
             return output_buffer.getvalue()
         except Exception as e:

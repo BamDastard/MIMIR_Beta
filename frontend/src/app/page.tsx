@@ -270,12 +270,21 @@ export default function Home() {
 
                         if (data.type === 'status') {
                             setThinkingStatus(data.content);
+                        } else if (data.type === 'tool_call') {
+                            setThinkingStatus(null);
+                            // Add a separate message for the tool call
+                            setMessages(prev => [...prev, {
+                                role: 'assistant',
+                                content: data.tool, // Store raw tool name for UI component to handle
+                                timestamp: Date.now(),
+                                type: 'tool'
+                            }]);
                         } else if (data.type === 'response_chunk') {
                             setThinkingStatus(null);
                             setMessages(prev => {
                                 const lastMsg = prev[prev.length - 1];
-                                if (lastMsg && lastMsg.role === 'assistant') {
-                                    // Append to existing assistant message
+                                // Append to existing assistant message ONLY if it's NOT a tool message
+                                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
                                     return [
                                         ...prev.slice(0, -1),
                                         { ...lastMsg, content: lastMsg.content + data.text }
@@ -285,7 +294,8 @@ export default function Home() {
                                     return [...prev, {
                                         role: 'assistant',
                                         content: data.text,
-                                        timestamp: Date.now()
+                                        timestamp: Date.now(),
+                                        type: 'text'
                                     }];
                                 }
                             });
@@ -301,17 +311,19 @@ export default function Home() {
                             // Final update to ensure consistency and handle tools
                             setMessages(prev => {
                                 const lastMsg = prev[prev.length - 1];
-                                // If we were streaming, update the last message. If not (e.g. no tools used yet), add new.
-                                if (lastMsg && lastMsg.role === 'assistant') {
+                                // If we were streaming, update the last message.
+                                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
                                     return [
                                         ...prev.slice(0, -1),
                                         { ...lastMsg, content: data.text }
                                     ];
                                 }
+                                // If the last message was a tool, we append the final response as a new message
                                 return [...prev, {
                                     role: 'assistant',
                                     content: data.text,
-                                    timestamp: Date.now()
+                                    timestamp: Date.now(),
+                                    type: 'text'
                                 }];
                             });
 
@@ -627,7 +639,7 @@ export default function Home() {
 
     return (
         <main className={cn(
-            "flex flex-col items-center justify-between relative h-screen overflow-hidden bg-black"
+            "flex flex-col items-center justify-between relative h-[100dvh] overflow-hidden bg-black"
         )}>
 
             {/* Background Video & Overlay */}
@@ -721,7 +733,9 @@ export default function Home() {
             {/* Main Content Area */}
             <div className={cn(
                 "z-10 flex-1 w-full relative overflow-hidden",
-                cookingMode ? "max-w-[100%] flex gap-6 p-4" : "max-w-none md:pl-60 md:pr-[297px] pt-24"
+                cookingMode ? "max-w-[100%] flex gap-6 p-4" :
+                    calendarExpanded ? "max-w-none md:pl-60 md:pr-[297px] pt-2 pb-6" :
+                        "max-w-none md:pl-60 md:pr-[297px] pt-24"
             )}>
 
                 {/* Expanded Calendar View */}
@@ -847,6 +861,6 @@ export default function Home() {
                 }}
             />
 
-        </main>
+        </main >
     );
 }
