@@ -5,12 +5,13 @@ from backend.core.user_manager import user_manager
 from backend.core.tools import web_search
 from backend.core.calendar import CalendarManager
 
-async def plan_day(user_id: str) -> Dict[str, Any]:
+async def plan_day(user_id: str, google_token: str = None) -> Dict[str, Any]:
     """
     Gather information for the "Planning the Day" feature.
     
     Args:
         user_id: The user's auth ID.
+        google_token: The Google Access Token for calendar sync.
         
     Returns:
         A dictionary containing the constructed prompt and initial data.
@@ -59,7 +60,7 @@ async def plan_day(user_id: str) -> Dict[str, Any]:
     # 3. Fetch Calendar Events (Next 3 days)
     calendar_summary = ""
     try:
-        calendar_manager = CalendarManager(user_id=user_id)
+        calendar_manager = CalendarManager(user_id=user_id, google_token=google_token)
         today = datetime.date.today()
         three_days_later = today + datetime.timedelta(days=3)
         
@@ -88,7 +89,13 @@ async def plan_day(user_id: str) -> Dict[str, Any]:
     if home_city:
         try:
             from backend.core.tools import get_weather
+            # Import log_debug locally or assume it's available if imported at top
+            from backend.core.ai import log_debug
+            
+            log_debug(f"[PLANNING] Fetching weather for {home_city}")
             weather_data = get_weather(location=home_city)
+            log_debug(f"[PLANNING] Weather result: {weather_data}")
+            
             if "error" not in weather_data:
                 current = weather_data.get("current", {})
                 forecast = weather_data.get("forecast", [])
@@ -100,10 +107,13 @@ async def plan_day(user_id: str) -> Dict[str, Any]:
                     weather_summary += f"Today's Forecast: High {today_forecast.get('high')}°F, Low {today_forecast.get('low')}°F, {today_forecast.get('conditions')}\n"
             else:
                 weather_summary += f"Could not fetch weather for {home_city}.\n"
+                log_debug(f"[PLANNING] Weather error: {weather_data.get('error')}")
         except Exception as e:
             print(f"[PLANNING] Error fetching weather: {e}")
+            log_debug(f"[PLANNING] Exception fetching weather: {e}")
     else:
         missing_home_city = True
+        log_debug(f"[PLANNING] No home city set for {user_id}")
 
     # 5. Construct the System Prompt
     # We want MIMIR to welcome the user, present this info, and offer help.

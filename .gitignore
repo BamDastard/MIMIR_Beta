@@ -26,6 +26,9 @@ ailab-*.json
 users.json
 mimir_calendar.json
 *.log
+debug_log.txt
+test_output.mp3
+user_profiles.json
 
 # Personal Data - Do Not Commit
 calendars/*.json
@@ -40,3 +43,6 @@ ROADMAP_ANDROID.md
 
 # Android
 android/
+
+# Agent
+.agent/

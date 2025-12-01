@@ -233,6 +233,9 @@ export default function Home() {
         if (session && (session as any).idToken) {
             headers['Authorization'] = `Bearer ${(session as any).idToken}`;
         }
+        if (session && (session as any).accessToken) {
+            headers['X-Google-Access-Token'] = (session as any).accessToken;
+        }
 
         return fetch(url, { ...options, headers });
     };

@@ -59,7 +59,7 @@ def web_search(query: str, num_results: int = 3) -> Dict:
         }
     """
     try:
-        print(f"[TOOL] Searching web for: {query}")
+        # print(f"[TOOL] Searching web for: {query}")
         
         # Call Google Custom Search API
         url = "https://www.googleapis.com/customsearch/v1"
@@ -167,7 +167,7 @@ def get_weather(location: str = None, lat: float = None, lon: float = None) -> D
             print(f"[TOOL] Using cached weather data")
             return cached
         
-        print(f"[TOOL] Fetching weather for: {location or f'{lat},{lon}'}")
+        print(f"[TOOL] Executing get_weather")
         
         # If location provided, geocode to lat/lon
         if location and not (lat and lon):
@@ -292,7 +292,7 @@ def get_location(ip_address: str = None) -> Dict:
             print(f"[TOOL] Using cached location data")
             return cached
         
-        print(f"[TOOL] Fetching location for IP: {ip_address or 'auto'}")
+        print(f"[TOOL] Executing get_location")
         
         # Call ipapi.co
         url = f"https://ipapi.co/{ip_address or ''}/json/" if ip_address else "https://ipapi.co/json/"
@@ -333,7 +333,7 @@ def start_cooking(title: str, ingredients: List[str], steps: List[str]) -> Dict:
     Returns:
         Structured recipe data or error
     """
-    print(f"[TOOL] Starting cooking session: {title}")
+    print(f"[TOOL] Executing start_cooking")
     
     # Validate required parameters
     if not steps or len(steps) == 0:
@@ -371,7 +371,7 @@ def cooking_navigation(action: str, step_index: int = None) -> Dict:
     Returns:
         Navigation action data
     """
-    print(f"[TOOL] Cooking navigation: {action}")
+    print(f"[TOOL] Executing cooking_navigation")
     return {
         "status": "navigating",
         "action": action,
@@ -392,7 +392,7 @@ def journal_search(start_date: str = None, end_date: str = None, query: str = No
     Returns:
         {"entries": [...], "count": N}
     """
-    print(f"[TOOL] Searching journals for {user_id}: start={start_date}, end={end_date}, query={query}")
+    print(f"[TOOL] Executing journal_search")
     
     journal_dir = os.path.join(os.getcwd(), "journal_entries")
     if not os.path.exists(journal_dir):
@@ -464,7 +464,7 @@ def journal_read(date: str, user_id: str = "Matt Burchett") -> Dict:
     Returns:
         Full journal entry data including summary, stats, and recipe
     """
-    print(f"[TOOL] Reading journal for {user_id} on {date}")
+    print(f"[TOOL] Executing journal_read")
     
     journal_dir = os.path.join(os.getcwd(), "journal_entries")
     safe_id = "".join([c for c in user_id if c.isalnum() or c in (' ', '_', '-')]).strip()
@@ -500,7 +500,7 @@ def record_preference(preference: str, user_id: str = "Matt Burchett") -> Dict:
     Returns:
         Status message
     """
-    print(f"[TOOL] Recording preference for {user_id}: {preference}")
+    print(f"[TOOL] Executing record_preference")
     
     # We need to access the user_manager instance. 
     # Since tools.py is imported by ai.py which imports user_manager, we can import it here inside the function to avoid circular imports if necessary,
@@ -538,7 +538,7 @@ def set_home_city(city: str, confirm: bool = False, user_id: str = "Matt Burchet
     Returns:
         Status message
     """
-    print(f"[TOOL] Setting home city for {user_id}: {city} (confirm={confirm})")
+    print(f"[TOOL] Executing set_home_city")
     
     try:
         from backend.core.user_manager import user_manager

@@ -315,4 +315,54 @@ class DailyJournalManager:
             
         print(f"[JOURNAL] Generated entry for {user_id} on {date_str}")
 
+    def cleanup_old_logs(self, retention_days: int = 3):
+        """
+        Delete daily logs older than retention_days if a journal entry exists.
+        """
+        print(f"[MAINTENANCE] Cleaning up daily logs older than {retention_days} days...")
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
+        cutoff_str = cutoff_date.strftime("%Y-%m-%d")
+        
+        if not os.path.exists(DAILY_LOGS_DIR):
+            return
+
+        count = 0
+        journal_dir = os.path.join(MIMIR_DATA_DIR, "journal_entries") if MIMIR_DATA_DIR else os.path.join(os.getcwd(), "journal_entries")
+        
+        try:
+            for filename in os.listdir(DAILY_LOGS_DIR):
+                if not filename.endswith(".json"):
+                    continue
+                    
+                # Filename format: safe_id_YYYY-MM-DD.json
+                try:
+                    parts = filename.replace(".json", "").split("_")
+                    date_part = parts[-1]
+                    
+                    # Check if it's a valid date
+                    datetime.datetime.strptime(date_part, "%Y-%m-%d")
+                    
+                    if date_part < cutoff_str:
+                        # It's old. Check for journal entry.
+                        journal_exists = False
+                        if os.path.exists(journal_dir):
+                            for j_file in os.listdir(journal_dir):
+                                if j_file.endswith(f"_{date_part}.json"):
+                                    journal_exists = True
+                                    break
+                        
+                        if journal_exists:
+                            log_path = os.path.join(DAILY_LOGS_DIR, filename)
+                            os.remove(log_path)
+                            print(f"[MAINTENANCE] Deleted archived log: {filename}")
+                            count += 1
+                except ValueError:
+                    continue # Not a date-formatted file
+                except Exception as e:
+                    print(f"[ERROR] Error cleaning log {filename}: {e}")
+        except Exception as e:
+             print(f"[ERROR] Maintenance failed: {e}")
+                
+        print(f"[MAINTENANCE] Cleanup complete. Deleted {count} files.")
+
 daily_journal = DailyJournalManager()

@@ -162,6 +162,12 @@ async def startup_event():
             json.dump({}, f)
         print("[STARTUP] Created empty user_profiles.json")
 
+    # Run maintenance tasks
+    try:
+        daily_journal.cleanup_old_logs()
+    except Exception as e:
+        print(f"[STARTUP] Log cleanup failed: {e}")
+
 @app.post("/chat")
 async def chat(request: Request, body: ChatRequest):
     try:
@@ -237,7 +243,9 @@ async def chat(request: Request, body: ChatRequest):
                         text_buffer = ""
                         import re
 
-                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
+                        # Pass the system prompt as user_input
+                        google_token = request.headers.get("X-Google-Access-Token")
+                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id, google_token=google_token):
                             # Pass through all events to frontend immediately
                             await output_queue.put(json.dumps(event) + "\n")
 
@@ -337,7 +345,8 @@ async def chat_plan_day(request: Request, body: ChatRequest):
         display_name = profile.display_name
         
         # 1. Generate Plan Data
-        plan_data = await plan_day(user_id)
+        google_token = request.headers.get("X-Google-Access-Token")
+        plan_data = await plan_day(user_id, google_token=google_token)
         user_msg = plan_data["system_prompt"]
         personality = body.personality_intensity
         
@@ -388,7 +397,8 @@ async def chat_plan_day(request: Request, body: ChatRequest):
                         import re
 
                         # Pass the system prompt as user_input
-                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id):
+                        google_token = request.headers.get("X-Google-Access-Token")
+                        async for event in mimir_ai.generate_response_stream(user_msg, context, personality_intensity=personality, user_id=user_id, google_token=google_token):
                             await output_queue.put(json.dumps(event) + "\n")
 
                             if event["type"] == "response_chunk":
@@ -537,7 +547,16 @@ from backend.core.calendar import CalendarManager
 async def get_calendar_events(request: Request, start_date: str = None, end_date: str = None):
     """Get all calendar events or filter by date range"""
     user_id = request.state.user_auth_id
-    calendar_manager = CalendarManager(user_id=user_id)
+    google_token = request.headers.get("X-Google-Access-Token")
+    print(f"[DEBUG] get_calendar_events: Token present? {bool(google_token)}")
+    calendar_manager = CalendarManager(user_id=user_id, google_token=google_token)
+    
+    # Trigger background sync if token is available
+    if google_token:
+        import threading
+        print("[DEBUG] Triggering background sync_down")
+        threading.Thread(target=calendar_manager.sync_down).start()
+        
     events = calendar_manager.get_events(start_date, end_date)
     return {"events": events}
 
@@ -545,7 +564,8 @@ async def get_calendar_events(request: Request, start_date: str = None, end_date
 async def create_calendar_event(request: Request, event: dict):
     """Create a new calendar event"""
     user_id = request.state.user_auth_id
-    calendar_manager = CalendarManager(user_id=user_id)
+    google_token = request.headers.get("X-Google-Access-Token")
+    calendar_manager = CalendarManager(user_id=user_id, google_token=google_token)
     result = calendar_manager.create_event(
         subject=event['subject'],
         date=event['date'],
@@ -559,7 +579,8 @@ async def create_calendar_event(request: Request, event: dict):
 async def update_calendar_event(request: Request, event_id: str, event: dict):
     """Update a calendar event"""
     user_id = request.state.user_auth_id
-    calendar_manager = CalendarManager(user_id=user_id)
+    google_token = request.headers.get("X-Google-Access-Token")
+    calendar_manager = CalendarManager(user_id=user_id, google_token=google_token)
     result = calendar_manager.update_event(event_id, **{k: v for k, v in event.items() if k != 'user_id'})
     return result
 
@@ -567,7 +588,8 @@ async def update_calendar_event(request: Request, event_id: str, event: dict):
 async def delete_calendar_event(request: Request, event_id: str):
     """Delete a calendar event"""
     user_id = request.state.user_auth_id
-    calendar_manager = CalendarManager(user_id=user_id)
+    google_token = request.headers.get("X-Google-Access-Token")
+    calendar_manager = CalendarManager(user_id=user_id, google_token=google_token)
     success = calendar_manager.delete_event(event_id)
     return {"success": success}
 

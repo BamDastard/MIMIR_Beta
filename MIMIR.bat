@@ -9,7 +9,7 @@ echo.
 
 :: 1. Start Backend
 echo [1/3] Initializing Neural Backend...
-start "MIMIR Backend" /min cmd /k "py -m uvicorn backend.main:app --host 127.0.0.1 --port 8000"
+start "MIMIR Backend" /min cmd /k "backend\venv\Scripts\python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000"
 
 :: 2. Start Frontend
 echo [2/3] Launching Visual Interface...

@@ -17,16 +17,20 @@ if not GOOGLE_API_KEY:
 else:
     print(f"API Key loaded: {GOOGLE_API_KEY[:10]}...")
 
+def log_debug(message):
+    pass
+
+import datetime
+
 def load_persona():
     """Loads the MIMIR persona from personas.ini"""
     try:
         config = configparser.ConfigParser()
         # Try multiple locations for personas.ini
-        # 1. Project Root (Local & Docker) - 3 levels up from backend/core/ai.py
+        # 1. Project Root (Local & Docker)
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         path_variants = [
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "personas.ini"),
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "personas.ini"),
-            os.path.join(os.getcwd(), "personas.ini"),
+            os.path.join(root_dir, "personas.ini"),
             "personas.ini"
         ]
         
@@ -68,6 +72,7 @@ def load_persona():
        
     2. **get_weather** - Get weather
        Format: [TOOL:get_weather|location=...]
+       *Must include city, state/region, and country (e.g. North Port, FL, US)*
        
     3. **get_location** - Get user location
        Format: [TOOL:get_location]
@@ -131,7 +136,7 @@ class MimirAI:
         # Dictionary to store history per user: {user_id: [messages]}
         self.user_histories = {}
         print("[MIMIR] Initialized with Gemini 2.5 Pro")
-        print(f"[MIMIR] System Instruction Preview: {MIMIR_SYSTEM_INSTRUCTION[:100]}...")
+        # print(f"[MIMIR] System Instruction Preview: {MIMIR_SYSTEM_INSTRUCTION[:100]}...")
 
     def get_history(self, user_id: str) -> list:
         """Get or initialize history for a specific user"""
@@ -161,107 +166,81 @@ class MimirAI:
                 if '=' in param:
                     key, value = param.split('=', 1)
                     params[key.strip()] = value.strip()
-        
-        return {
-            "tool": tool_name,
-            "params": params
-        }
-        
-    def execute_tool(self, tool_call: dict, user_id: str = "Matt Burchett") -> dict:
-        """Execute a tool and return results"""
-        from backend.core.tools import web_search, get_weather, get_location, start_cooking, cooking_navigation, journal_search, journal_read, record_preference, set_home_city
-        from backend.core.calendar import calendar_search, calendar_create, calendar_update, calendar_delete
-        
+        return {"tool": tool_name, "params": params}
+
+    def execute_tool(self, tool_call: dict, user_id: str = "Matt Burchett", google_token: str = None) -> dict:
+        """Execute a tool and return the result"""
         tool_name = tool_call["tool"]
         params = tool_call["params"]
         
+        log_debug(f"[TOOL] Executing: {tool_name} with params: {params} | Token present: {bool(google_token)}")
         print(f"[TOOL] Executing: {tool_name} with params: {params}")
         
         try:
             if tool_name == "web_search":
-                query = params.get("query", "")
+                from backend.core.tools import web_search
+                query = params.get("query")
                 return web_search(query)
-            
+
             elif tool_name == "get_weather":
+                from backend.core.tools import get_weather
                 location = params.get("location")
-                lat = float(params["lat"]) if "lat" in params else None
-                lon = float(params["lon"]) if "lon" in params else None
-                return get_weather(location=location, lat=lat, lon=lon)
-            
+                return get_weather(location=location)
+
             elif tool_name == "get_location":
-                ip = params.get("ip")
-                return get_location(ip_address=ip)
-            
+                from backend.core.tools import get_location
+                return get_location()
+                
             elif tool_name == "calendar_search":
+                from backend.core.calendar import calendar_search
                 start_date = params.get("start_date")
                 end_date = params.get("end_date")
                 query = params.get("query")
                 return calendar_search(start_date, end_date, query, user_id=user_id)
             
             elif tool_name == "calendar_create":
+                from backend.core.calendar import calendar_create
                 subject = params.get("subject")
                 date = params.get("date")
                 start_time = params.get("start_time")
                 end_time = params.get("end_time")
                 details = params.get("details")
-                return calendar_create(subject, date, start_time, end_time, details, user_id=user_id)
+                return calendar_create(subject, date, start_time, end_time, details, user_id=user_id, google_token=google_token)
             
             elif tool_name == "calendar_update":
+                from backend.core.calendar import calendar_update
                 event_id = params.get("event_id")
-                subject = params.get("subject")
-                date = params.get("date")
-                start_time = params.get("start_time")
-                end_time = params.get("end_time")
-                details = params.get("details")
-                return calendar_update(event_id, subject, date, start_time, end_time, details, user_id=user_id)
-
+                return calendar_update(event_id, **params, user_id=user_id, google_token=google_token)
+            
             elif tool_name == "calendar_delete":
+                from backend.core.calendar import calendar_delete
                 event_id = params.get("event_id")
-                return calendar_delete(event_id, user_id=user_id)
-
-            elif tool_name == "start_cooking":
-                title = params.get("title")
+                return calendar_delete(event_id, user_id=user_id, google_token=google_token)
                 
-                # Use ;; delimiter instead of Python list syntax
-                ingredients_str = params.get("ingredients", "")
-                if ingredients_str:
-                    ingredients = [item.strip() for item in ingredients_str.split(";;") if item.strip()]
-                else:
-                    ingredients = []
-                
-                steps_str = params.get("steps", "")
-                if steps_str:
-                    steps = [step.strip() for step in steps_str.split(";;") if step.strip()]
-                else:
-                    steps = []
-                        
-                return start_cooking(title, ingredients, steps)
-
-            elif tool_name == "cooking_navigation":
-                action = params.get("action")
-                step_index = params.get("step_index")
-                if step_index:
-                    step_index = int(step_index)
-                return cooking_navigation(action, step_index)
-            
-            elif tool_name == "journal_search":
-                start_date = params.get("start_date")
-                end_date = params.get("end_date")
-                query = params.get("query")
-                return journal_search(start_date, end_date, query, user_id=user_id)
-            
-            elif tool_name == "journal_read":
-                date = params.get("date")
-                return journal_read(date, user_id=user_id)
-            
             elif tool_name == "record_preference":
+                from backend.core.user_manager import user_manager
                 preference = params.get("preference")
-                return record_preference(preference, user_id=user_id)
-            
+                user_manager.add_preference(user_id, preference)
+                return {"status": "recorded", "preference": preference}
+                
             elif tool_name == "set_home_city":
+                from backend.core.user_manager import user_manager
                 city = params.get("city")
-                return set_home_city(city, user_id=user_id)
+                user_manager.set_home_city(user_id, city)
+                return {"status": "set", "city": city}
 
+            elif tool_name == "journal_search":
+                 from backend.core.daily_journal import daily_journal
+                 query = params.get("query")
+                 results = daily_journal.search_entries(user_id, query)
+                 return {"results": results}
+
+            elif tool_name == "journal_read":
+                 from backend.core.daily_journal import daily_journal
+                 date = params.get("date")
+                 entry = daily_journal.get_entry(user_id, date)
+                 return {"entry": entry}
+            
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         
@@ -269,13 +248,8 @@ class MimirAI:
             print(f"[TOOL ERROR] {tool_name} failed: {e}")
             traceback.print_exc()
             return {"error": str(e)}
-    
-    async def generate_response_stream(self, user_input: str, context: str = "", personality_intensity: int = 75, user_id: str = "Matt Burchett"):
-        """
-        Generator that yields status updates and the final response.
-        """
-        # Add personality modifier based on intensity
-        personality_modifier = ""
+
+    async def generate_response_stream(self, user_input: str, context: str = "", personality_intensity: int = 75, user_id: str = "Matt Burchett", google_token: str = None):
         if personality_intensity <= 25:
             personality_modifier = "\n\nIMPORTANT: Respond in a subtle, professional tone. Minimize Norse references and macho attitude. Be helpful and direct."
         elif personality_intensity <= 50:
@@ -296,7 +270,7 @@ class MimirAI:
             path = match.group(1).strip()
             text_prompt = text_prompt.replace(match.group(0), "")
             if os.path.exists(path):
-                print(f"[MIMIR] Found file path: {path}")
+                # print(f"[MIMIR] Found file path: {path}")
                 try:
                     ext = os.path.splitext(path)[1].lower()
                     if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
@@ -377,7 +351,7 @@ class MimirAI:
 
         try:
             yield {"type": "status", "content": "Consulting the runes..."}
-            print(f"[DEBUG] Sending to Gemini API: {final_prompt[:50]}...")
+            # print(f"[DEBUG] Sending to Gemini API: {final_prompt[:50]}...")
             
             # Use ainvoke for async with the context-enriched history
             # REMOVED: Redundant ainvoke. We stream directly in the loop below.
@@ -415,8 +389,13 @@ class MimirAI:
                                 if re.match(r'\[TOOL:.*?\]', potential_tool, re.DOTALL):
                                     # Valid tool! Do NOT yield as text.
                                     pass
+                                elif potential_tool.startswith("[TOOL:") and potential_tool.endswith("]"):
+                                    # Fallback: It looks like a tool but regex failed? Hide it anyway.
+                                    # print(f"[DEBUG] Regex failed but fallback caught tool: {potential_tool}")
+                                    pass
                                 else:
                                     # Not a tool, yield what we held back
+                                    # print(f"[DEBUG] Yielding non-tool bracket content: {potential_tool}")
                                     yield { "type": "response_chunk", "text": potential_tool }
                                 
                                 parsing_tool = False
@@ -433,8 +412,8 @@ class MimirAI:
 
                 # Stream finished. Now check full text for tools to execute.
                 response_text = full_response_text
-                print(f"[DEBUG] Full response: {response_text[:100]}...")
-
+                # print(f"[DEBUG] Full response: {response_text[:100]}...")
+                
                 tool_matches = self.detect_tool_calls(response_text)
                 
                 if tool_matches:
@@ -446,7 +425,7 @@ class MimirAI:
                         
                         # Loop Detection
                         tool_signature = f"{tool_call['tool']}:{json.dumps(tool_call['params'], sort_keys=True)}"
-                        print(f"[DEBUG] Checking loop: {tool_signature} in {executed_tools}")
+                        # print(f"[DEBUG] Checking loop: {tool_signature} in {executed_tools}")
                         
                         if tool_signature in executed_tools:
                             print(f"[WARN] Loop detected! Skipping repeated tool call: {tool_signature}")
@@ -455,7 +434,7 @@ class MimirAI:
                                 "task": asyncio.sleep(0, result={"error": "SYSTEM: Loop detected. You have already executed this tool with these parameters. Do not do it again. Provide your final response."})
                             })
                         else:
-                            print(f"[DEBUG] Tool call detected: {tool_call}")
+                            # print(f"[DEBUG] Tool call detected: {tool_call}")
                             tools_used.append(tool_call["tool"])
                             executed_tools.append(tool_signature)
                             
@@ -470,7 +449,7 @@ class MimirAI:
                             yield {"type": "status", "content": status_msg}
                             
                             # Execute tool (async parallel)
-                            task = asyncio.to_thread(self.execute_tool, tool_call, user_id=user_id)
+                            task = asyncio.to_thread(self.execute_tool, tool_call, user_id=user_id, google_token=google_token)
                             iteration_tool_results.append({"tool": tool_call["tool"], "task": task})
 
                     # Wait for all tools to complete
@@ -499,7 +478,7 @@ class MimirAI:
                     generation_history.append(HumanMessage(content=tool_message))
                     
                     yield {"type": "status", "content": "Processing results..."}
-                    print(f"[DEBUG] Sending tool results back to AI...")
+                    # print(f"[DEBUG] Sending tool results back to AI...")
                     
                     iteration += 1
                 else:

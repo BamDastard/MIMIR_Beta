@@ -113,21 +113,14 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 
 ## Phase 3: Google Calendar Integration (3-4 weeks)
 
-### Two-Way Sync
-- [ ] Google Calendar API integration
-  - [ ] OAuth consent screen setup
-  - [ ] Calendar read/write permissions
-  - [ ] Multi-calendar support
-- [ ] Sync engine
-  - [ ] Real-time webhooks from Google Calendar
-  - [ ] Periodic background sync (every 5 minutes)
-  - [ ] Conflict resolution strategy
-  - [ ] Sync status indicator in UI
-- [ ] MIMIR calendar actions
-  - [ ] Create events in Google Calendar via voice/chat
-  - [ ] Update existing Google events
-  - [ ] Delete events from either system
-  - [ ] Smart scheduling ("Find me time next week")
+### Sync Strategy
+- [ ] **Bidirectional Sync**:
+  - [ ] **Up-Sync**: Push local MIMIR changes to Google Calendar immediately.
+  - [ ] **Down-Sync**: Pull Google Calendar changes to MIMIR (on login and after local changes).
+  - [ ] **Initial Sync**: Populate MIMIR calendar from Google on first login.
+- [ ] **Integration**:
+  - [ ] Hook into `CalendarManager` for automatic sync triggers.
+  - [ ] Use existing MIMIR tools for event creation (voice/text), which will now sync to Google.
 
 ### Enhanced Calendar Features
 - [ ] Event templates
@@ -136,7 +129,7 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 - [ ] Location integration with maps
 - [ ] Attachment support
 
-**Deliverable**: Seamless Google Calendar integration with MIMIR as calendar assistant
+**Deliverable**: Seamless Google Calendar integration with MIMIR as calendar assistant (Sync-based)
 
 ---
 

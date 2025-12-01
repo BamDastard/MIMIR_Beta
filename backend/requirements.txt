@@ -10,6 +10,7 @@ python-dotenv
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
+google-api-python-client
 
 PyPDF2
 python-docx
@@ -21,3 +22,4 @@ lxml
 lxml
 tzdata
 langchain-text-splitters
+duckduckgo-search
