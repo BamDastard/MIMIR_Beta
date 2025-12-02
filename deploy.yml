@@ -1,0 +1,102 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ailab-414802
+  REGION: us-central1
+  REPO_NAME: mimir-repo
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Create Artifact Registry Repo
+        # Try to create repo, ignore error if it exists
+        run: |
+          gcloud artifacts repositories create ${{ env.REPO_NAME }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --description="MIMIR Docker Repository" || true
+
+      - name: Build and Push Backend
+        run: |
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-backend:${{ github.sha }} ./backend
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-backend:${{ github.sha }}
+
+      - name: Create GCS Bucket for Persistence
+        run: |
+          gcloud storage buckets create gs://${{ env.PROJECT_ID }}-mimir-data --location=${{ env.REGION }} || true
+
+      - name: Deploy Backend
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: mimir-backend
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-backend:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            MIMIR_DATA_DIR=/mnt/gcs
+            DEFAULT_TIMEZONE=America/New_York
+          flags: '--allow-unauthenticated --add-volume=name=mimir-data,type=cloud-storage,bucket=${{ env.PROJECT_ID }}-mimir-data --add-volume-mount=volume=mimir-data,mount-path=/mnt/gcs'
+
+  deploy-frontend:
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and Push Frontend
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=${{ needs.deploy-backend.outputs.backend_url }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-frontend:${{ github.sha }} ./frontend
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-frontend:${{ github.sha }}
+
+      - name: Deploy Frontend
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: mimir-frontend
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/mimir-frontend:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+            NEXTAUTH_URL=https://mimir-frontend-711207955787.us-central1.run.app
+          flags: '--allow-unauthenticated'

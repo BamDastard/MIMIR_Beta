@@ -16,6 +16,8 @@ import EventModal from '@/components/EventModal';
 import CameraModal from '@/components/CameraModal';
 import OnboardingModal from '@/components/OnboardingModal';
 import JournalView from '@/components/JournalView';
+import FloatingRunes from '@/components/FloatingRunes';
+import AvatarScene from '@/components/Avatar/AvatarScene';
 
 // Types
 import { Message, Recipe, CalendarEvent } from '@/types';
@@ -31,6 +33,7 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
+    const [isAvatarMode, setIsAvatarMode] = useState(true);
     const [conversationMode, setConversationMode] = useState(false);
     const [personalityIntensity, setPersonalityIntensity] = useState(75);
     const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -70,49 +73,87 @@ export default function Home() {
     const transcriptRef = useRef('');
 
     // Audio Queue for Streaming TTS
-    const audioQueueRef = useRef<string[]>([]);
+    const audioQueueRef = useRef<{ audio: string; text: string }[]>([]);
     const isPlayingRef = useRef(false);
     const isAudioEnabled = true; // Could be a state if we want to toggle audio
+    const textBufferRef = useRef('');
 
-    const playNextAudio = () => {
+    const avatarRef = useRef<any>(null);
+
+    const playNextAudio = async () => {
+        console.log("playNextAudio called. Queue length:", audioQueueRef.current.length, "isPlaying:", isPlayingRef.current, "isAudioEnabled:", isAudioEnabled);
         if (!isAudioEnabled || isPlayingRef.current || audioQueueRef.current.length === 0) return;
 
-        const nextAudioBase64 = audioQueueRef.current.shift();
-        if (!nextAudioBase64) return;
+        const nextItem = audioQueueRef.current.shift();
+        if (!nextItem) return;
+        const { audio: nextAudioBase64, text: audioText } = nextItem;
 
         isPlayingRef.current = true;
         setIsSpeaking(true);
 
-        if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current = null;
+        // If avatar is available, use it for playback
+        let avatarPlayed = false;
+        console.log("Checking avatarRef:", avatarRef.current);
+
+        if (avatarRef.current) {
+            try {
+                console.log("Attempting to speak via avatar...");
+                // Pass the text associated with this audio chunk for lip sync
+                const success = await avatarRef.current.speak(nextAudioBase64, audioText);
+                console.log("Avatar speak result:", success);
+                if (success) {
+                    avatarPlayed = true;
+                    // Playback finished
+                    isPlayingRef.current = false;
+                    setTimeout(() => {
+                        if (audioQueueRef.current.length === 0) {
+                            setIsSpeaking(false);
+                        }
+                        playNextAudio();
+                    }, 100);
+                }
+            } catch (e) {
+                console.error("Avatar speech failed:", e);
+            }
+        } else {
+            console.log("Avatar ref is null, falling back to audio element.");
         }
 
-        const audio = new Audio(`data:audio/wav;base64,${nextAudioBase64}`);
-        audioRef.current = audio;
+        if (!avatarPlayed) {
+            // Fallback to standard Audio element
+            console.log("Playing via standard Audio element");
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current = null;
+            }
 
-        audio.onended = () => {
-            isPlayingRef.current = false;
-            // Small delay between sentences for natural flow
-            setTimeout(() => {
-                if (audioQueueRef.current.length === 0) {
-                    setIsSpeaking(false);
-                }
+            const audio = new Audio(`data:audio/wav;base64,${nextAudioBase64}`);
+            audioRef.current = audio;
+
+            audio.onended = () => {
+                console.log("Audio element ended");
+                isPlayingRef.current = false;
+                // Small delay between sentences for natural flow
+                setTimeout(() => {
+                    if (audioQueueRef.current.length === 0) {
+                        setIsSpeaking(false);
+                    }
+                    playNextAudio();
+                }, 100);
+            };
+
+            audio.onerror = (e) => {
+                console.error("Audio playback failed:", e);
+                isPlayingRef.current = false;
                 playNextAudio();
-            }, 100);
-        };
+            };
 
-        audio.onerror = (e) => {
-            console.error("Audio playback failed:", e);
-            isPlayingRef.current = false;
-            playNextAudio();
-        };
-
-        audio.play().catch(e => {
-            console.error("Audio playback failed:", e);
-            isPlayingRef.current = false;
-            playNextAudio();
-        });
+            audio.play().catch(e => {
+                console.error("Audio playback failed:", e);
+                isPlayingRef.current = false;
+                playNextAudio();
+            });
+        }
     };
 
     const scrollToBottom = () => {
@@ -247,8 +288,10 @@ export default function Home() {
 
             if (data.type === 'status') {
                 setThinkingStatus(data.content);
+                if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('thinking');
             } else if (data.type === 'tool_call') {
                 setThinkingStatus(null);
+                if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('tool');
                 setMessages(prev => [...prev, {
                     role: 'assistant',
                     content: data.tool,
@@ -257,6 +300,13 @@ export default function Home() {
                 }]);
             } else if (data.type === 'response_chunk') {
                 setThinkingStatus(null);
+                if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('idle');
+
+                // Stream text directly to avatar
+                if (isAvatarMode && avatarRef.current) {
+                    avatarRef.current.addText(data.text);
+                }
+
                 setMessages(prev => {
                     const lastMsg = prev[prev.length - 1];
                     if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
@@ -275,13 +325,16 @@ export default function Home() {
                 });
             } else if (data.type === 'audio_chunk') {
                 if (data.audio_base64) {
-                    audioQueueRef.current.push(data.audio_base64);
-                    if (!isPlayingRef.current) {
-                        playNextAudio();
+                    if (isAvatarMode && avatarRef.current) {
+                        avatarRef.current.addAudio(data.audio_base64);
+                    } else {
+                        // Fallback for non-avatar mode (if we want to support audio there too)
+                        // For now, we only play audio in avatar mode
                     }
                 }
             } else if (data.type === 'response') {
                 setThinkingStatus(null);
+                if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('idle');
                 setMessages(prev => {
                     const lastMsg = prev[prev.length - 1];
                     if (lastMsg && lastMsg.role === 'assistant' && lastMsg.type !== 'tool') {
@@ -376,6 +429,7 @@ export default function Home() {
         } finally {
             setIsLoading(false);
             setThinkingStatus(null);
+            if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('idle');
         }
     };
 
@@ -392,6 +446,7 @@ export default function Home() {
         setInput('');
         setIsLoading(true);
         setThinkingStatus("Thinking...");
+        if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('thinking');
 
         try {
             const response = await authenticatedFetch(`${API_BASE_URL}/chat`, {
@@ -435,6 +490,7 @@ export default function Home() {
         } finally {
             setIsLoading(false);
             setThinkingStatus(null);
+            if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('idle');
         }
     };
 
@@ -730,6 +786,17 @@ export default function Home() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-secondary/10 blur-[120px] rounded-full opacity-30" />
             </div>
 
+            {/* Floating Runes - Global Background */}
+            <FloatingRunes count={20} opacity={0.8} size="text-4xl" />
+
+            {/* 3D Avatar Scene - Visible in Avatar Mode */}
+            <div className={cn(
+                "absolute inset-0 z-0 transition-opacity duration-500",
+                isAvatarMode ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            )}>
+                <AvatarScene ref={avatarRef} />
+            </div>
+
             {/* Header */}
             <header className="flex-none w-full border-b border-white/5 bg-black/20 backdrop-blur-sm z-50">
                 <div className="w-full items-center justify-between font-mono text-sm flex p-4 pl-6">
@@ -745,6 +812,21 @@ export default function Home() {
                             alt="MIMIR"
                             className="h-16 w-auto object-contain"
                         />
+                        {/* Avatar Mode Toggle */}
+                        <button
+                            onClick={() => setIsAvatarMode(!isAvatarMode)}
+                            className={cn(
+                                "hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ml-4",
+                                isAvatarMode
+                                    ? "bg-primary/20 text-primary-glow border-primary/50 shadow-[0_0_10px_rgba(var(--primary-rgb),0.3)]"
+                                    : "bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white"
+                            )}
+                        >
+                            <User size={16} />
+                            <span className="text-xs font-medium tracking-wider">
+                                {isAvatarMode ? "AVATAR ACTIVE" : "ENABLE AVATAR"}
+                            </span>
+                        </button>
                     </div>
 
                     {/* Mobile Right Sidebar Toggle */}
@@ -820,31 +902,33 @@ export default function Home() {
                 ) : (
                     /* Normal View (Chat + Optional Cooking Panel) */
                     <>
-                        {/* Chat Interface - Hidden on mobile during cooking mode */}
-                        <div className={cn(
-                            "w-full h-full flex flex-col",
-                            cookingMode ? "hidden md:flex md:w-1/3" : "flex"
-                        )}>
-                            <ChatInterface
-                                messages={messages}
-                                isLoading={isLoading}
-                                thinkingStatus={thinkingStatus}
-                                messagesEndRef={messagesEndRef}
-                                cookingMode={cookingMode}
-                                input={input}
-                                setInput={setInput}
-                                isListening={isListening}
-                                conversationMode={conversationMode}
-                                setConversationMode={setConversationMode}
-                                handleSubmit={handleSubmit}
-                                attachedFiles={attachedFiles}
-                                onAttachmentSelect={handleAttachmentSelect}
-                                startCamera={startCamera}
-                                attachmentInputRef={attachmentInputRef}
-                                isMuted={isMuted}
-                                setIsMuted={setIsMuted}
-                            />
-                        </div>
+                        {/* Chat Interface - Hidden in Avatar Mode */}
+                        {!isAvatarMode && (
+                            <div className={cn(
+                                "w-full h-full flex flex-col",
+                                cookingMode ? "hidden md:flex md:w-1/3" : "flex"
+                            )}>
+                                <ChatInterface
+                                    messages={messages}
+                                    isLoading={isLoading}
+                                    thinkingStatus={thinkingStatus}
+                                    messagesEndRef={messagesEndRef}
+                                    cookingMode={cookingMode}
+                                    input={input}
+                                    setInput={setInput}
+                                    isListening={isListening}
+                                    conversationMode={conversationMode}
+                                    setConversationMode={setConversationMode}
+                                    handleSubmit={handleSubmit}
+                                    attachedFiles={attachedFiles}
+                                    onAttachmentSelect={handleAttachmentSelect}
+                                    startCamera={startCamera}
+                                    attachmentInputRef={attachmentInputRef}
+                                    isMuted={isMuted}
+                                    setIsMuted={setIsMuted}
+                                />
+                            </div>
+                        )}
 
                         {/* Mobile Cooking Controls Overlay - Only Input Bar */}
                         {cookingMode && (
@@ -855,6 +939,31 @@ export default function Home() {
                                     thinkingStatus={null}
                                     messagesEndRef={messagesEndRef}
                                     cookingMode={cookingMode}
+                                    input={input}
+                                    setInput={setInput}
+                                    isListening={isListening}
+                                    conversationMode={conversationMode}
+                                    setConversationMode={setConversationMode}
+                                    handleSubmit={handleSubmit}
+                                    attachedFiles={attachedFiles}
+                                    onAttachmentSelect={handleAttachmentSelect}
+                                    startCamera={startCamera}
+                                    attachmentInputRef={attachmentInputRef}
+                                    isMuted={isMuted}
+                                    setIsMuted={setIsMuted}
+                                />
+                            </div>
+                        )}
+
+                        {/* Avatar Mode Input Overlay */}
+                        {isAvatarMode && (
+                            <div className="fixed bottom-0 left-0 w-full z-50">
+                                <ChatInterface
+                                    messages={[]} // Hide messages
+                                    isLoading={isLoading}
+                                    thinkingStatus={thinkingStatus}
+                                    messagesEndRef={messagesEndRef}
+                                    cookingMode={false}
                                     input={input}
                                     setInput={setInput}
                                     isListening={isListening}

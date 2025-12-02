@@ -13,6 +13,7 @@
   --color-secondary-glow: var(--secondary-glow);
 
   --animate-pulse-slow: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-spin-slow: spin 12s linear infinite;
 }
 
 :root {
@@ -72,12 +73,15 @@ body {
 .pt-safe {
   padding-top: env(safe-area-inset-top);
 }
+
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
 .pl-safe {
   padding-left: env(safe-area-inset-left);
 }
+
 .pr-safe {
   padding-right: env(safe-area-inset-right);
 }

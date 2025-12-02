@@ -14,6 +14,7 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  transpilePackages: ['@met4citizen/talkinghead'],
   // @ts-ignore - turbopack is a valid config in Next 16 but types might lag
   turbopack: {},
 };

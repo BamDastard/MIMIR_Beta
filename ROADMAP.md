@@ -114,54 +114,56 @@ Implement an animated 3D head of MIMIR with lip-sync to TTS playback, matching t
 ## Phase 3: Google Calendar Integration (3-4 weeks)
 
 ### Sync Strategy
-- [ ] **Bidirectional Sync**:
-  - [ ] **Up-Sync**: Push local MIMIR changes to Google Calendar immediately.
-  - [ ] **Down-Sync**: Pull Google Calendar changes to MIMIR (on login and after local changes).
-  - [ ] **Initial Sync**: Populate MIMIR calendar from Google on first login.
-- [ ] **Integration**:
-  - [ ] Hook into `CalendarManager` for automatic sync triggers.
-  - [ ] Use existing MIMIR tools for event creation (voice/text), which will now sync to Google.
+- [x] **Bidirectional Sync**:
+  - [x] **Up-Sync**: Push local MIMIR changes to Google Calendar immediately.
+  - [x] **Down-Sync**: Pull Google Calendar changes to MIMIR (on login and after local changes).
+  - [x] **Initial Sync**: Populate MIMIR calendar from Google on first login.
+- [x] **Integration**:
+  - [x] Hook into `CalendarManager` for automatic sync triggers.
+  - [x] Use existing MIMIR tools for event creation (voice/text), which will now sync to Google.
 
 ### Enhanced Calendar Features
 - [ ] Event templates
 - [ ] Recurring event support
 - [ ] Attendee management
 - [ ] Location integration with maps
-- [ ] Attachment support
+- [x] Attachment support
 
 **Deliverable**: Seamless Google Calendar integration with MIMIR as calendar assistant (Sync-based)
 
 ---
 
-## Phase 4: 3D Avatar Implementation (8-10 weeks)
+## Phase 4: 3D Avatar Implementation (Revised Strategy)
 
-### 3D Model Creation
-- [ ] Create 3D model based on attached image
-  - [ ] Stylized head with flowing hair/beard
-  - [ ] Glowing eyes with emission shader
-  - [ ] Runic forehead symbol
-  - [ ] Optimized for web (low poly count)
-- [ ] Rigging for animation
-  - [ ] Jaw bone for speech
-  - [ ] Eye targets for gaze
-  - [ ] Subtle idle animations (breathing, blinking)
-- [ ] Materials & textures
-  - [ ] Metallic/bronze material for face
-  - [ ] Animated glow for eyes
-  - [ ] Particle effects for power/wisdom aura
+### Strategy: Open Source & Ready Player Me
+Leverage the **Ready Player Me** platform for a high-quality, web-optimized avatar and **Open Source** libraries for lip-syncing to avoid recurring costs.
 
-### Lip Sync Implementation
-- [ ] Audio analysis
-  - [ ] Phoneme detection from TTS audio
-  - [ ] Amplitude-based jaw movement
-  - [ ] Timing synchronization
-- [ ] Viseme mapping
-  - [ ] Map phonemes to mouth shapes
-  - [ ] Smooth transitions between shapes
-- [ ] Real-time rendering
-  - [ ] Three.js or Babylon.js integration
-  - [ ] WebGL optimization for mobile
-  - [ ] LOD (Level of Detail) for performance
+### 3D Model & Rendering
+- [ ] **Avatar Creation**:
+  - [ ] Use Ready Player Me (RPM) to generate the base model (free for non-commercial/indie use).
+  - [ ] Customize for "MIMIR" aesthetic (beard, glowing eyes via custom texture/shader if possible).
+  - [ ] Export as optimized GLB.
+- [ ] **Rendering Engine**:
+  - [ ] Implement `React Three Fiber` (R3F) canvas in the frontend.
+  - [ ] Create a reusable `<AvatarScene />` component.
+  - [ ] Optimize lighting and environment for the "void" aesthetic.
+
+### Animation & Lip Sync
+- [ ] **Lip Sync Solution**:
+  - [ ] Evaluate and integrate **TalkingHead** or **Wawa-Lipsync** (Open Source).
+  - [ ] **Mechanism**: Real-time audio analysis or TTS viseme event mapping.
+  - [ ] **Fallback**: Simple amplitude-based jaw movement if full visemes are too heavy.
+- [ ] **Animations**:
+  - [ ] Idle loops (breathing, looking around) from Mixamo (free).
+  - [ ] Speaking gestures.
+
+### Integration
+- [ ] **TTS Connection**:
+  - [ ] Hook into the existing Text-to-Speech playback.
+  - [ ] Drive avatar mouth shapes from the audio stream.
+- [ ] **UI Placement**:
+  - [ ] Overlay avatar on the main video background (optional) or dedicated panel.
+  - [ ] Ensure performance doesn't degrade the chat experience (target 60fps).
 
 ### Avatar UI Integration
 - [ ] Desktop layout
