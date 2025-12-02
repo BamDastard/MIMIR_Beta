@@ -211,7 +211,7 @@ const MimirAvatar = forwardRef<MimirAvatarRef, {}>((props, ref) => {
                 });
 
                 // Initialize TalkingHead
-                node = new TalkingHead(null, {
+                node = new TalkingHead(null as any, {
                     avatarOnly: true,
                     avatarOnlyScene: scene,
                     avatarOnlyCamera: camera,
