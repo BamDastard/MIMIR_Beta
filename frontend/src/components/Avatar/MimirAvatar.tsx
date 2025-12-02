@@ -8,6 +8,7 @@ export interface MimirAvatarRef {
     addText: (text: string) => void;
     stop: () => void;
     playAnimation: (name: 'thinking' | 'tool' | 'idle') => void;
+    startAudio: () => void;
 }
 
 const MimirAvatar = forwardRef<MimirAvatarRef, {}>((props, ref) => {
@@ -189,6 +190,12 @@ const MimirAvatar = forwardRef<MimirAvatarRef, {}>((props, ref) => {
                 }
             } catch (e) {
                 console.warn(`Failed to play animation ${name}:`, e);
+            }
+        },
+        startAudio: async () => {
+            if (head && head.audioCtx && head.audioCtx.state === 'suspended') {
+                console.log("Resuming AudioContext via user gesture...");
+                await head.audioCtx.resume();
             }
         }
     }));

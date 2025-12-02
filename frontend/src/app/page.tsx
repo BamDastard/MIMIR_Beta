@@ -446,7 +446,10 @@ export default function Home() {
         setInput('');
         setIsLoading(true);
         setThinkingStatus("Thinking...");
-        if (isAvatarMode && avatarRef.current) avatarRef.current.playAnimation('thinking');
+        if (isAvatarMode && avatarRef.current) {
+            avatarRef.current.startAudio();
+            avatarRef.current.playAnimation('thinking');
+        }
 
         try {
             const response = await authenticatedFetch(`${API_BASE_URL}/chat`, {
