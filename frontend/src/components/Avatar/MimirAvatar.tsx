@@ -127,6 +127,11 @@ const MimirAvatar = forwardRef<MimirAvatarRef, {}>((props, ref) => {
 
             // Speak
             if (head.speakAudio) {
+                // Ensure we stop "thinking" animation before speaking so it doesn't get stuck
+                if (head.mixer) {
+                    head.mixer.stopAllAction();
+                }
+
                 await new Promise((resolve) => {
                     head.speakAudio({
                         audio: decodedAudio,

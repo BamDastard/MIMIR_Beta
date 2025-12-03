@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { Send, Mic, MicOff, Paperclip, Camera, X, Menu, User, Calendar as CalendarIcon, BookOpen, ChevronLeft, ChevronRight, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
+import { Send, Mic, MicOff, Paperclip, Camera, X, Menu, User, Calendar as CalendarIcon, BookOpen, ChevronLeft, ChevronRight, Play, Pause, SkipForward, SkipBack, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from "@/lib/utils";
 
@@ -819,14 +819,14 @@ export default function Home() {
                         <button
                             onClick={() => setIsAvatarMode(!isAvatarMode)}
                             className={cn(
-                                "hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ml-4",
+                                "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ml-4",
                                 isAvatarMode
                                     ? "bg-primary/20 text-primary-glow border-primary/50 shadow-[0_0_10px_rgba(var(--primary-rgb),0.3)]"
                                     : "bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white"
                             )}
                         >
-                            <User size={16} />
-                            <span className="text-xs font-medium tracking-wider">
+                            <Bot size={16} />
+                            <span className="hidden md:inline text-xs font-medium tracking-wider">
                                 {isAvatarMode ? "AVATAR ACTIVE" : "ENABLE AVATAR"}
                             </span>
                         </button>
